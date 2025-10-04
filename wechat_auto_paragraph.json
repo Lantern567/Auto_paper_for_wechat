@@ -1,0 +1,61 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "39527508-9cc4-433a-b95d-2531abbca291",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "resource": "auth",
+        "operation": "auth:getAccessToken"
+      },
+      "type": "n8n-nodes-wechat-offiaccount.wechatOfficialAccountNode",
+      "typeVersion": 1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "dbee6c48-ae4c-4a7d-a550-201c76a95a44",
+      "name": "Auth:getAccessToken auth",
+      "credentials": {
+        "wechatOfficialAccountCredentialsApi": {
+          "id": "ktFqa6y7JD7C2ZBV",
+          "name": "Wechat Official Account Credentials account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Auth:getAccessToken auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "85bdc283-e419-4a9e-b1c8-967a15c32ef5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "55eea1944d6d0944ec0c448021aced11250d527b9d21d7157e4aa73d564b38ed"
+  },
+  "id": "e1aSb0wo844W55KM",
+  "tags": []
+}
