@@ -1,30 +1,188 @@
 {
-  "name": "My workflow",
+  "name": "论文解读自动生成微信推文",
   "nodes": [
     {
       "parameters": {},
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        0,
-        0
+        3104,
+        560
       ],
       "id": "39527508-9cc4-433a-b95d-2531abbca291",
       "name": "When clicking ‘Execute workflow’"
     },
     {
       "parameters": {
-        "resource": "auth",
-        "operation": "auth:getAccessToken"
+        "fileSelector": "/files/a43dcbcf-e3f5-4ad9-a7d8-cd5a0ba48c8a.png"
+      },
+      "type": "n8n-nodes-base.readBinaryFiles",
+      "typeVersion": 1,
+      "position": [
+        3344,
+        672
+      ],
+      "id": "e3e63085-af3a-4ea6-85a2-d6c8406a56be",
+      "name": "读取封面图片"
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "operation": "media:uploadOther"
       },
       "type": "n8n-nodes-wechat-offiaccount.wechatOfficialAccountNode",
       "typeVersion": 1,
       "position": [
-        208,
-        0
+        3568,
+        672
       ],
-      "id": "dbee6c48-ae4c-4a7d-a550-201c76a95a44",
-      "name": "Auth:getAccessToken auth",
+      "id": "5e882d79-c555-45ee-b20c-093302d9ccca",
+      "name": "上传封面到微信",
+      "credentials": {
+        "wechatOfficialAccountCredentialsApi": {
+          "id": "ktFqa6y7JD7C2ZBV",
+          "name": "Wechat Official Account Credentials account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        4480,
+        528
+      ],
+      "id": "08b08e91-e27b-463e-a25f-b0c40c149ff4",
+      "name": "合并封面和内容"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/files/航空净零排放的途径.pdf"
+      },
+      "type": "n8n-nodes-base.readBinaryFiles",
+      "typeVersion": 1,
+      "position": [
+        3344,
+        464
+      ],
+      "id": "e10b63a8-19dd-4e09-9a83-e7bb6d7e0240",
+      "name": "读取PDF文件1"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        3568,
+        464
+      ],
+      "id": "b7dfb645-ad34-4b58-8494-ae52c1b80f0b",
+      "name": "提取PDF文本1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "prompt-template",
+              "name": "promptTemplate",
+              "value": "我现在想写一系列公众号文章，我会上传给您一个内容格式模板，是用markdown格式撰写的一个通用模板。你只需参照这个内容格式模板写公众号文章就行。我会上传给您pdf文章，你基于pdf文章撰写公众号文章即可。\"请严格按照以上模板的风格和结构来撰写文章。  **文章长度要求：** - 每个章节至少包含 3-5 个详细的子章节 - 全文总字数应在 10000 字以上。注意不要说其他的例如“好的” 等等的话，直接按照格式写就行。- 确保对论文的核心方法、实验结果、创新点进行深入阐述\"|模板格式内容：# 模仿液滴表面张力！这款可变刚度车轮，实现\"软硬\"状态的实时切换> Science Robotics最新成果：通过调节轮内\"智能链\"的张力，在刚性滚转与柔性越障之间实现无缝过渡***### 全文速览传统车轮在平坦地面上高效稳定，但在崎岖地形上却举步维艰，这构成了移动机器人领域的一个经典权衡。为了破解这一难题，来自韩国机械与材料研究院（KIMM）等机构的团队，从**液滴的表面张力**现象中汲取灵感，开发了一款全新的**可变刚度变形车轮**。该车轮的核心，是一个位于轮子外缘的**\"智能链\"**结构，其\"表面张力\"可以通过内部的**钢丝辐条**进行实时调节。当张力增大时，车轮会收缩成一个坚硬的圆形，适合在平地上高速行驶；当张力减小时，车轮则会变得柔软，能够像履带一样\"包裹\"住障碍物并平稳越过。这项技术成功地被应用到了一台重达`$120$`公斤的双轮轮椅上，并实现了在户外环境中的实时\"软硬\"状态切换和越障。### 01 研究背景轮式、履带式和腿式是移动机器人的三种主流运动模式，它们在平地效率和越障能力之间各有取舍。虽然非充气轮胎等柔性车轮在一定程度上提升了越障能力，但它们的整体刚度是固定的，无法同时满足\"高速平地行驶\"（需要高刚度）和\"极限越障\"（需要低刚度）这两个相互矛盾的需求。因此，如何设计一款能够**在线、实时地、大范围地调节自身刚度和形态**的车轮，是实现真正全地形移动的关键。### 02 研究贡献本文提出的液滴启发式车轮，通过一个巧妙的仿生机械设计，成功地解决了上述核心挑战，其主要贡献如下：1.  **开创了\"表面张力\"可变刚度范式：** 首次将液滴表面张力的物理原理，类比并应用到车轮的机械设计中，提出了一种通过调节辐条张力来控制轮缘\"智能链\"宏观刚度的全新方法。2.  **实现了大范围、实时的刚度调节：** 车轮可以在坚硬的\"圆形\"和柔软的\"变形\"两种状态间无缝切换，其可变形深度高达自身半径的`$40\\%$`。3.  **构建并验证了大型应用平台：** 成功地将该技术从小型验证平台，扩展并应用到了一台`$120$`公斤级的全尺寸双轮轮椅上，并在真实的户外环境中，验证了其在负载下的实时越障能力。4.  **建立了系统的力学分析模型：** 为车轮复杂的变形过程和刚度变化机理，建立了详尽的几何与力学分析模型，为未来的设计优化提供了理论基础。（后续章节省略...）请严格按照以上模板的风格和结构来撰写文章。",
+              "type": "string"
+            },
+            {
+              "id": "pdf-content",
+              "name": "pdfContent",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3792,
+        464
+      ],
+      "id": "029cae6a-0832-4233-b126-39096aba80f2",
+      "name": "设置提示词和PDF内容1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "AIzaSyCcZSlIMx9Rvy89-YQTPtvhq5YdEarjudQ"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": $json.promptTemplate + \"\\n\\n以下是PDF论文内容：\\n\\n\" + $json.pdfContent\n    }]\n  }],\n  \"generationConfig\": {\n    \"temperature\": 0.7,\n    \"topK\": 40,\n    \"topP\": 0.95,\n    \"maxOutputTokens\": 65536\n  }\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4000,
+        464
+      ],
+      "id": "54952b3c-6e8f-4af2-9a86-50bbc3f3ecd7",
+      "name": "调用Gemini API1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 从 Gemini API 响应中提取生成的文章内容\nconst response = $input.first().json;\n\n// 提取 Gemini 返回的文本\nlet articleContent = '';\nif (response.candidates && response.candidates.length > 0) {\n  const candidate = response.candidates[0];\n  if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {\n    articleContent = candidate.content.parts[0].text;\n  }\n}\n\n// 如果没有成功提取内容，抛出错误\nif (!articleContent) {\n  throw new Error('无法从 Gemini API 响应中提取文章内容');\n}\n\n// 格式化为微信推文格式\n// 微信公众号支持的 HTML 标签有限，这里进行简单的 Markdown 到 HTML 转换\nlet wechatContent = articleContent;\n\n// 基本的 Markdown 到 HTML 转换\n// 标题转换\nwechatContent = wechatContent.replace(/^### (.+)$/gm, '<h3>$1</h3>');\nwechatContent = wechatContent.replace(/^## (.+)$/gm, '<h2>$1</h2>');\nwechatContent = wechatContent.replace(/^# (.+)$/gm, '<h1>$1</h1>');\n\n// 粗体转换\nwechatContent = wechatContent.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');\n\n// 引用块转换\nwechatContent = wechatContent.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');\n\n// 分割线转换\nwechatContent = wechatContent.replace(/^\\*\\*\\*$/gm, '<hr>');\n\n// 列表转换（简单处理）\nwechatContent = wechatContent.replace(/^\\d+\\.\\s+(.+)$/gm, '<p>$&</p>');\n\n// 段落转换（为空行分隔的内容添加段落标签）\nwechatContent = wechatContent.split('\\n\\n').map(para => {\n  if (para.trim() && !para.startsWith('<')) {\n    return '<p>' + para.trim() + '</p>';\n  }\n  return para;\n}).join('\\n');\n\n// 提取标题作为文章标题（第一个 # 标题）\nconst titleMatch = articleContent.match(/^# (.+)$/m);\nconst title = titleMatch ? titleMatch[1] : '论文解读';\n\n// 提取摘要（第一个 > 引用块）\nconst summaryMatch = articleContent.match(/^> (.+)$/m);\nconst summary = summaryMatch ? summaryMatch[1] : '';\n\n// 返回格式化后的数据\nreturn {\n  title: title,\n  summary: summary,\n  content: wechatContent,\n  originalMarkdown: articleContent\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4224,
+        464
+      ],
+      "id": "0312c3a7-6cf1-491c-b028-ee85c3f6ec3e",
+      "name": "格式化微信推文内容1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 构建微信草稿所需的 JSON 格式\n// 直接从节点引用获取数据，绕过合并节点的问题\n\n// 方式1：从格式化节点获取内容\nconst formatData = $node[\"格式化微信推文内容1\"].json;\n\n// 方式2：从上传节点获取 media_id\nconst uploadData = $node[\"上传封面到微信\"].json;\nconst mediaId = uploadData.media_id || uploadData.data?.media_id;\n\nif (!mediaId) {\n  throw new Error('未能获取封面图 media_id。上传节点返回: ' + JSON.stringify(uploadData));\n}\n\nif (!formatData || !formatData.title) {\n  throw new Error('未能获取格式化的文章内容。格式化节点返回: ' + JSON.stringify(formatData));\n}\n\nconst article = {\n  \"title\": formatData.title || \"论文解读\",\n  \"author\": \"论文解读\",\n  \"digest\": formatData.summary || \"\",\n  \"content\": formatData.content || \"<p>内容生成中...</p>\",\n  \"content_source_url\": \"\",\n  \"thumb_media_id\": mediaId,\n  \"need_open_comment\": 0,\n  \"only_fans_can_comment\": 0\n};\n\nreturn {\n  articles: JSON.stringify([article]),\n  debug_media_id: mediaId,\n  debug_title: formatData.title\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4672,
+        528
+      ],
+      "id": "d6934ae1-c189-47e2-b0b3-e4598eb66d3d",
+      "name": "准备微信草稿数据1"
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "draft:add",
+        "articles": "={{ $json.articles }}"
+      },
+      "type": "n8n-nodes-wechat-offiaccount.wechatOfficialAccountNode",
+      "typeVersion": 1,
+      "position": [
+        4880,
+        528
+      ],
+      "id": "9619361a-25de-47b3-84a7-02286206e205",
+      "name": "保存为微信草稿1",
       "credentials": {
         "wechatOfficialAccountCredentialsApi": {
           "id": "ktFqa6y7JD7C2ZBV",
@@ -39,7 +197,111 @@
       "main": [
         [
           {
-            "node": "Auth:getAccessToken auth",
+            "node": "读取PDF文件1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "读取封面图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取封面图片": {
+      "main": [
+        [
+          {
+            "node": "上传封面到微信",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传封面到微信": {
+      "main": [
+        [
+          {
+            "node": "合并封面和内容",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "合并封面和内容": {
+      "main": [
+        [
+          {
+            "node": "准备微信草稿数据1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取PDF文件1": {
+      "main": [
+        [
+          {
+            "node": "提取PDF文本1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取PDF文本1": {
+      "main": [
+        [
+          {
+            "node": "设置提示词和PDF内容1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "设置提示词和PDF内容1": {
+      "main": [
+        [
+          {
+            "node": "调用Gemini API1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "调用Gemini API1": {
+      "main": [
+        [
+          {
+            "node": "格式化微信推文内容1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "格式化微信推文内容1": {
+      "main": [
+        [
+          {
+            "node": "合并封面和内容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备微信草稿数据1": {
+      "main": [
+        [
+          {
+            "node": "保存为微信草稿1",
             "type": "main",
             "index": 0
           }
@@ -51,7 +313,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "85bdc283-e419-4a9e-b1c8-967a15c32ef5",
+  "versionId": "a9b36a15-7f00-43da-a8d9-4c1a148a3e13",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "55eea1944d6d0944ec0c448021aced11250d527b9d21d7157e4aa73d564b38ed"
