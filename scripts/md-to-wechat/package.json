@@ -1,0 +1,26 @@
+{
+  "name": "md-to-wechat",
+  "version": "1.0.0",
+  "description": "Convert Markdown to WeChat Official Account format using mdnice.com",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "convert": "node dist/index.js",
+    "dev": "tsc && node dist/index.js"
+  },
+  "keywords": [
+    "markdown",
+    "wechat",
+    "converter",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.56.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

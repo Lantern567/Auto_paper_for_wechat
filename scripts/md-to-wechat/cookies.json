@@ -1,0 +1,58 @@
+[
+  {
+    "name": "token",
+    "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJNVE0yT0RBdyIsImlzcyI6IjkwYjlhNjNjODFjYzYzNTg4NDg2IiwiaWF0IjoxNzYwMDc3MTIwLCJhdWQiOiJtZG5pY2UtYXBpIiwiZXhwIjoxNzYyNjY5MTIwLCJuYmYiOjE3NjAwNzcxMjB9.XKMG_bo8BZMCwVUTQ_NI02FCKJt4qc-Vy9Z6FoiYBuY",
+    "domain": ".mdnice.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  },
+  {
+    "name": "username",
+    "value": "lantern567",
+    "domain": ".mdnice.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  },
+  {
+    "name": "avatar",
+    "value": "",
+    "domain": ".mdnice.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  },
+  {
+    "name": "userOutId",
+    "value": "828045482503",
+    "domain": ".mdnice.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  },
+  {
+    "name": "Hm_lvt_f857e607ecc7cde02ed32a561f10efb2",
+    "value": "1760077000",
+    "domain": ".mdnice.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  },
+  {
+    "name": "HMACCOUNT",
+    "value": "4DFD4BA282C947B9",
+    "domain": ".mdnice.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  },
+  {
+    "name": "Hm_lpvt_f857e607ecc7cde02ed32a561f10efb2",
+    "value": "1760078710",
+    "domain": ".mdnice.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  }
+]
