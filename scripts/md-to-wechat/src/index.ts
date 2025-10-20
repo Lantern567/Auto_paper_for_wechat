@@ -40,49 +40,56 @@ function readMarkdownFile(filePath: string): string {
 }
 
 /**
- * 在Markdown中插入图片链接
- * @param markdown 原始Markdown文本
- * @param imagePaths 图片路径数组
- * @returns 插入图片后的Markdown
+ * 创建mdnice文章
+ * @param page Playwright页面对象
+ * @param title 文章标题
  */
-function insertImagesIntoMarkdown(markdown: string, imagePaths: string[]): string {
-  if (!imagePaths || imagePaths.length === 0) {
-    return markdown;
-  }
+async function createArticle(page: Page, title: string): Promise<void> {
+  try {
+    console.error(`创建文章: ${title}`);
 
-  let result = markdown;
-
-  // 查找所有图注: **图N. xxx**
-  const figurePattern = /\*\*图(\d+)\.\s+([^*]+)\*\*/g;
-  let match;
-  const figures: Array<{ index: number; fullMatch: string; position: number }> = [];
-
-  while ((match = figurePattern.exec(markdown)) !== null) {
-    const figureNum = parseInt(match[1]);
-    figures.push({
-      index: figureNum,
-      fullMatch: match[0],
-      position: match.index
-    });
-  }
-
-  console.error(`找到 ${figures.length} 个图注`);
-
-  // 从后往前替换，避免位置偏移
-  for (let i = figures.length - 1; i >= 0; i--) {
-    const figure = figures[i];
-    const imageIndex = figure.index - 1; // 数组从0开始
-
-    if (imageIndex >= 0 && imageIndex < imagePaths.length) {
-      const imagePath = imagePaths[imageIndex];
-      // 在图注前插入图片markdown语法
-      const imageMarkdown = `![图${figure.index}](${imagePath})\n\n`;
-      result = result.slice(0, figure.position) + imageMarkdown + result.slice(figure.position);
-      console.error(`插入图${figure.index}: ${imagePath}`);
+    // 检查是否已经在文章页面（URL包含outId）
+    const url = page.url();
+    if (url.includes('outId=')) {
+      console.error('✓ 已在文章页面，跳过创建');
+      return;
     }
-  }
 
-  return result;
+    // 等待并点击"新增文件夹"按钮旁边的plus按钮或直接点击菜单
+    // 通常首次使用会自动弹出新增文章对话框
+    try {
+      await page.waitForSelector('dialog:has-text("新增文章")', { timeout: 5000 });
+      console.error('✓ 检测到新增文章对话框');
+    } catch (e) {
+      // 没有弹出对话框，尝试点击plus按钮
+      console.error('未检测到对话框，尝试点击新增按钮...');
+      const plusButton = page.locator('button:has-text("plus")').first();
+      await plusButton.click();
+      await page.waitForTimeout(1000);
+    }
+
+    // 填写文章标题
+    const titleInput = page.locator('textbox:has-text("请输入标题")').or(page.locator('input[placeholder*="标题"]')).first();
+    await titleInput.fill(title);
+    console.error('✓ 已填写标题');
+
+    // 点击"新增"按钮
+    const createButton = page.locator('button:has-text("新 增")').first();
+    await createButton.click();
+    console.error('✓ 点击新增按钮');
+
+    // 等待文章创建成功（URL变化或成功提示）
+    await page.waitForFunction(() => {
+      return window.location.href.includes('outId=');
+    }, { timeout: 10000 });
+
+    console.error('✓ 文章创建成功');
+    await page.waitForTimeout(2000); // 等待页面稳定
+
+  } catch (error) {
+    console.error(`✗ 创建文章失败: ${error}`);
+    throw error;
+  }
 }
 
 /**
@@ -213,26 +220,21 @@ function loadCookies(): any[] {
 /**
  * 核心转换函数:将Markdown转换为微信公众号HTML
  */
-async function convertMarkdownToWechatHTML(markdown: string, imagePaths?: string[]): Promise<string> {
+async function convertMarkdownToWechatHTML(markdown: string): Promise<string> {
   let browser: Browser | null = null;
 
   try {
-    // 如果提供了图片路径，先在Markdown中插入图片
-    let processedMarkdown = markdown;
-    if (imagePaths && imagePaths.length > 0) {
-      console.error(`收到 ${imagePaths.length} 张图片，开始插入到Markdown中`);
-      processedMarkdown = insertImagesIntoMarkdown(markdown, imagePaths);
-    }
-
     // 加载 cookies（日志输出到stderr）
     const cookies = loadCookies();
 
     // 启动浏览器
     browser = await chromium.launch({
-      headless: true // 使用无头浏览器
+      headless: false, // 启用有头模式以支持mdnice对话框
+      args: ['--disable-blink-features=AutomationControlled'] // 禁用自动化检测标识
     });
     const context = await browser.newContext({
-      permissions: ['clipboard-read', 'clipboard-write']
+      permissions: ['clipboard-read', 'clipboard-write'],
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' // 使用真实user-agent
     });
 
     if (cookies.length > 0) {
@@ -240,6 +242,13 @@ async function convertMarkdownToWechatHTML(markdown: string, imagePaths?: string
     }
 
     const page = await context.newPage();
+
+    // 覆盖navigator.webdriver属性来隐藏自动化标识
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false
+      });
+    });
 
     // 导航到 mdnice 编辑器
     await page.goto(MDNICE_URL, {
@@ -266,36 +275,34 @@ async function convertMarkdownToWechatHTML(markdown: string, imagePaths?: string
       // 忽略
     }
 
-    // 清空并注入 Markdown 内容
+    // 步骤1：创建文章（使用时间戳作为标题）
+    const articleTitle = `临时文章_${Date.now()}`;
+    await createArticle(page, articleTitle);
+
+    // 步骤2：等待CodeMirror编辑器加载
     console.error('等待CodeMirror编辑器加载...');
     await page.waitForSelector('.CodeMirror', { timeout: TIMEOUT });
 
-    console.error('清空并设置新内容...');
+    // 步骤3：注入纯文本Markdown（不包含图片）
+    console.error('注入Markdown内容...');
     await page.evaluate((md) => {
       const cm = document.querySelector('.CodeMirror') as any;
       if (cm && cm.CodeMirror) {
-        // 先清空
-        cm.CodeMirror.setValue('');
-        // 等待一下
-        setTimeout(() => {
-          // 再设置新内容
-          cm.CodeMirror.setValue(md);
-        }, 100);
+        cm.CodeMirror.setValue(md);
       }
     }, markdown);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
+    console.error('✓ Markdown内容注入完成');
 
-    // 点击编辑器并按回车键以触发渲染
-    console.error('触发编辑器渲染...');
-    await page.click('.CodeMirror');
-    await page.waitForTimeout(200);
-    await page.keyboard.press('End'); // 移动到末尾
-    await page.keyboard.press('Enter'); // 按回车触发渲染
-    await page.waitForTimeout(3000); // 等待渲染完成
-    console.error('Markdown内容注入完成');
+    // 不再处理图片上传，图片由后续workflow节点处理
+    console.error('\n跳过图片上传，由后续workflow节点处理');
+
+    // 等待渲染完成
+    await page.waitForTimeout(3000);
+    console.error('✓ 等待页面渲染完成');
 
     // 点击复制按钮
-    console.error('查找微信复制按钮...');
+    console.error('\n查找微信复制按钮...');
     const wechatButton = page.locator('#nice-sidebar-wechat');
     await wechatButton.waitFor({ state: 'visible', timeout: TIMEOUT });
     console.error('点击复制按钮...');
@@ -364,20 +371,8 @@ async function main() {
       process.exit(1);
     }
 
-    // 检查是否有图片路径参数
-    let imagePaths: string[] | undefined;
-    const imagesIndex = args.indexOf('--images');
-    if (imagesIndex !== -1 && imagesIndex + 1 < args.length) {
-      try {
-        imagePaths = JSON.parse(args[imagesIndex + 1]);
-        console.error(`收到 ${imagePaths?.length || 0} 张图片路径`);
-      } catch (e) {
-        console.error('警告: 解析图片路径失败:', e);
-      }
-    }
-
     try {
-      const html = await convertMarkdownToWechatHTML(markdown, imagePaths);
+      const html = await convertMarkdownToWechatHTML(markdown);
       // 输出HTML到stdout
       process.stdout.write(html);
       process.exit(0);

@@ -26,3 +26,54 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Temporary extracted images
+temp/
+
+# Test files
+test*.py
+test*.html
+test*.json
+test*.js
+test*.ts
+test*.md
+
+# Debug/inspect scripts
+inspect_*.py
+debug_*.py
+extract_*.py
+dump_*.py
+analyze_*.py
+fix_*.py
+adjust_*.py
+check_*.py
+count_*.py
+ensure_*.py
+show_*.py
+list_*.py
+apply_*.py
+update_workflow.py
+
+# PDF test files
+*.pdf
+
+# Temporary data files
+nul
+correct.txt
+latest_execution.json
+temp_connections.json
+
+# Old/backup workflows
+wechat_auto_paragraph_fixed.json
+workflow_e1aSb0wo844W55KM.json
+workflow_fixes/
+
+# Study materials
+PDFigCapX_study/
+
+# Root package files (only needed in subdirectories)
+/package.json
+/package-lock.json
+
+# PowerShell installer scripts
+install-claude-vscode.ps1
