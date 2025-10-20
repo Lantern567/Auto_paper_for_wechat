@@ -1,10 +1,104 @@
-# n8n 工作流开发指南
+# Auto Paper for WeChat
 
-## 项目说明
+> 基于 n8n 的学术论文自动转微信公众号推文工作流
+
+## 🎯 项目介绍
+
+本项目是一个自动化工作流系统，可以将学术论文（PDF）自动转换为适合微信公众号发布的格式化推文。通过 AI 解读论文内容、提取关键图表、生成 Markdown 文本，并最终转换为微信公众号的富文本格式。
+
+### 核心功能
+
+- ✅ **PDF 图片提取**：自动识别并提取论文中的图表（基于 PyMuPDF）
+- ✅ **AI 内容生成**：使用大语言模型解读论文并生成推文内容
+- ✅ **图片上传**：将提取的图表自动上传到图床（SM.MS）
+- ✅ **Markdown 转微信格式**：使用 mdnice 样式将 Markdown 转换为微信富文本
+- ✅ **Base64 流式传输**：优化的图片处理流程，无需中间文件读写
+
+### 技术栈
+
+- **工作流引擎**：n8n（开源自动化平台）
+- **图片提取**：Python + PyMuPDF + OpenCV
+- **格式转换**：Node.js + Playwright + mdnice
+- **容器化**：Docker
+- **版本控制**：Git
+
+---
+
+## 🚀 快速开始
+
+### 环境要求
+
+- Docker（用于运行 n8n）
+- Node.js 18+（用于 Markdown 转换服务）
+- Python 3.8+（用于 PDF 图片提取服务）
+
+### 配置文件
+
+本项目需要配置 MCP（Model Context Protocol）服务器。请复制 `.mcp.json.example` 为 `.mcp.json` 并填入你的 API 密钥：
+
+```bash
+cp .mcp.json.example .mcp.json
+# 然后编辑 .mcp.json，填入以下密钥：
+# - GITHUB_PERSONAL_ACCESS_TOKEN: GitHub PAT（用于 GitHub MCP）
+# - FIRECRAWL_API_KEY: Firecrawl API 密钥（可选）
+# - N8N_API_KEY: n8n API 密钥（启动 n8n 后生成）
+```
+
+### 安装依赖
+
+#### 1. n8n 服务
+```bash
+docker pull n8nio/n8n
+```
+
+#### 2. Markdown 转微信服务
+```bash
+cd scripts/md-to-wechat
+npm install
+npx playwright install chromium
+```
+
+#### 3. PDF 图片提取服务
+```bash
+pip install PyMuPDF opencv-python numpy
+```
+
+### 启动服务
+
+#### Windows PowerShell
+```powershell
+# 启动所有服务
+.\start-all-services.ps1
+```
+
+#### Linux / macOS
+```bash
+# 启动 n8n（首次）
+docker run -d --restart unless-stopped \
+  --name n8n \
+  -p 5678:5678 \
+  -v ~/.n8n:/home/node/.n8n \
+  -v $(pwd):/files \
+  n8nio/n8n
+
+# 启动 PDF 提取服务
+python3 scripts/image_extract_service.py &
+
+# 启动 Markdown 转换服务
+cd scripts/md-to-wechat && node server.js &
+```
+
+访问 http://localhost:5678 即可看到 n8n 工作界面。
+
+---
+
+## 📚 项目说明
 
 本项目采用 **混合模式**（VS Code 编辑 + n8n 网页端调试）进行 n8n 工作流开发。
 
-当前工作流：`wechat_auto_paragraph.json` - 微信公众号自动分段工作流
+**主要工作流**：
+- `wechat_auto_paragraph.json` - 微信公众号自动分段工作流（主工作流）
+- `workflow_VTSo0m1CsDP4ii8K_fixed.json` - 修复版工作流（包含图片上传优化）
 
 ---
 
@@ -397,32 +491,103 @@ npm install -g n8n
 
 ---
 
-## 项目结构
+## 📁 项目结构
 
 ```
-n8n_workflow/
-├── README.md                           # 本文档
-├── TESTING_GUIDE.md                    # 工作流测试指南
-├── wechat_auto_paragraph.json          # 微信自动分段工作流
-├── wechat_auto_paragraph_fixed.json    # 修复版工作流
-├── start-all-services.ps1              # 一键启动所有服务（PowerShell）
-├── stop-all-services.ps1               # 一键停止所有服务（PowerShell）
-├── .gitignore                          # Git 忽略配置
-├── scripts/                            # 服务脚本目录
-│   ├── image_extract_service.py        # PDF 图片提取服务（端口 3457）
-│   ├── test_extract.py                 # PDF 提取测试脚本
-│   └── md-to-wechat/                   # Markdown 转微信服务
-│       ├── server.js                   # HTTP 服务（端口 3456）
-│       ├── package.json                # Node.js 依赖配置
-│       ├── tsconfig.json               # TypeScript 配置
-│       ├── cookies.json                # mdnice 登录凭证
-│       ├── src/
-│       │   └── index.ts                # 转换脚本源码
-│       ├── dist/
-│       │   └── index.js                # 编译后的 JavaScript
-│       └── README.md                   # 服务说明文档
-└── temp/                               # 临时文件目录（PDF 提取的图片）
+Auto_paper_for_wechat/
+├── README.md                               # 本文档
+├── .gitignore                              # Git 忽略配置
+├── .mcp.json.example                       # MCP 配置模板
+├── wechat_auto_paragraph.json              # 主工作流：微信自动分段
+├── workflow_VTSo0m1CsDP4ii8K_fixed.json     # 优化版工作流（图片上传）
+├── scripts/                                # 服务脚本目录
+│   ├── image_extract_service.py            # PDF 图片提取服务（端口 3457）
+│   └── md-to-wechat/                       # Markdown 转微信服务
+│       ├── server.js                       # HTTP 服务（端口 3456）
+│       ├── package.json                    # Node.js 依赖
+│       ├── cookies.json                    # mdnice 登录凭证
+│       ├── src/index.ts                    # TypeScript 源码
+│       └── dist/index.js                   # 编译后的 JavaScript
+└── temp/                                   # 临时文件目录（自动创建）
 ```
+
+### 核心文件说明
+
+| 文件 | 说明 |
+|------|------|
+| `wechat_auto_paragraph.json` | 主工作流，包含完整的论文解读到推文生成流程 |
+| `scripts/image_extract_service.py` | PDF 图片提取 HTTP 服务，返回 base64 编码的图片数据 |
+| `scripts/md-to-wechat/server.js` | Markdown 转微信格式 HTTP 服务 |
+| `.mcp.json.example` | MCP 服务器配置模板（需复制为 `.mcp.json` 并填入密钥） |
+
+---
+
+## 🏗️ 工作流架构
+
+### 主要节点流程
+
+```
+[手动触发] → [读取PDF] → [PDF图片提取服务]
+                               ↓
+                         [处理图片路径]
+                               ↓
+                         [上传正文图片]
+                               ↓
+                    [AI Agent生成Markdown]
+                               ↓
+                      [Mdnice格式转换]
+                               ↓
+                    [AI Agent输出处理]
+                               ↓
+                     [准备微信公众号数据]
+                               ↓
+                      [发送到微信公众号]
+```
+
+### 关键技术点
+
+1. **图片处理优化**
+   - PDF 提取服务直接返回 base64 编码的图片数据
+   - 避免容器内文件读写问题
+   - 通过 n8n Code 节点转换为 binary 格式
+
+2. **流式数据传输**
+   - 使用 n8n 的 `binary` 格式传递图片
+   - 支持多图片并发上传到图床
+   - 保持图片顺序和元数据
+
+3. **服务解耦**
+   - PDF 提取服务独立运行（Python）
+   - Markdown 转换服务独立运行（Node.js）
+   - n8n 作为编排引擎协调各服务
+
+---
+
+## 🔧 配置说明
+
+### 必需配置
+
+#### 1. SM.MS 图床配置
+
+在 n8n 工作流的"上传正文图片"节点中配置：
+- API Token：在 [SM.MS](https://sm.ms) 注册并获取
+
+#### 2. 微信公众号配置
+
+在"发送到微信公众号"节点中配置：
+- 企业微信 Webhook URL 或其他推送方式
+
+#### 3. AI 模型配置
+
+在 AI Agent 节点中配置：
+- 模型选择（如 GPT-4、Claude 等）
+- API 密钥
+- 提示词模板
+
+### 可选配置
+
+- MCP 服务器：用于扩展 Claude Code 功能
+- Firecrawl：用于网页内容抓取（可选）
 
 ---
 
