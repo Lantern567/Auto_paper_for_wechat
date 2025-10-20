@@ -6,6 +6,9 @@ node_modules/
 .env.local
 .env.*.local
 
+# MCP configuration with API keys
+.mcp.json
+
 # n8n local database (if using SQLite)
 *.db
 database.sqlite

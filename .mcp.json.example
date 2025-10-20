@@ -1,0 +1,93 @@
+{
+	"mcpServers": {
+		"context7": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"-y",
+				"@upstash/context7-mcp@latest"
+			]
+		},
+		"sequential-thinking": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"-y",
+				"@modelcontextprotocol/server-sequential-thinking"
+			]
+		},
+		"playwright": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"@playwright/mcp@latest"
+			]
+		},
+		"mcp-server-firecrawl": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"-y",
+				"firecrawl-mcp"
+			],
+			"env": {
+				"FIRECRAWL_API_KEY": "your-firecrawl-api-key-here"
+			}
+		},
+		"desktop-commander": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"-y",
+				"@wonderwhy-er/desktop-commander"
+			]
+		},
+		"github": {
+			"type": "stdio",
+			"command": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+			"args": [
+				"run",
+				"-i",
+				"--rm",
+				"-e",
+				"GITHUB_PERSONAL_ACCESS_TOKEN",
+				"-e",
+				"HTTP_PROXY",
+				"-e",
+				"HTTPS_PROXY",
+				"ghcr.io/github/github-mcp-server"
+			],
+			"env": {
+				"GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-pat-here",
+				"HTTP_PROXY": "http://127.0.0.1:7897",
+				"HTTPS_PROXY": "http://127.0.0.1:7897"
+			}
+		},
+		"n8n-mcp": {
+			"type": "stdio",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npx",
+				"-y",
+				"n8n-mcp"
+			],
+			"env": {
+				"MCP_MODE": "stdio",
+				"DISABLE_CONSOLE_OUTPUT": "true",
+				"N8N_API_URL": "http://localhost:5678",
+				"N8N_API_KEY": "your-n8n-api-key-here"
+			}
+		}
+	}
+}
