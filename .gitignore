@@ -22,9 +22,10 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE and local settings
 .vscode/
 .idea/
+.claude/settings.local.json
 
 # Temporary files
 *.tmp
