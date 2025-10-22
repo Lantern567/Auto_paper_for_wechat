@@ -204,9 +204,9 @@ def extract_figure_number(caption_text):
     return None
 
 
-def extract_images(pdf_path, output_dir, dpi=300):
+def extract_first_page(pdf_path, output_dir, dpi=300):
     """
-    从PDF提取图表（使用混合策略）
+    提取PDF第一页作为完整图片
 
     Args:
         pdf_path: PDF文件路径
@@ -214,7 +214,57 @@ def extract_images(pdf_path, output_dir, dpi=300):
         dpi: 输出图片分辨率
 
     Returns:
-        提取结果列表
+        第一页图片信息字典
+    """
+    doc = fitz.open(pdf_path)
+    if len(doc) == 0:
+        doc.close()
+        return None
+
+    page = doc[0]
+    mat = fitz.Matrix(dpi / 72, dpi / 72)
+    pix = page.get_pixmap(matrix=mat, alpha=False)
+
+    # 转换为 OpenCV 格式
+    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+    # 保存第一页
+    output_filename = "page_1.png"
+    output_path = os.path.join(output_dir, output_filename)
+    cv2.imwrite(output_path, img)
+
+    # 读取并转换为 base64
+    import base64
+    with open(output_path, 'rb') as img_file:
+        img_data = img_file.read()
+        base64_data = base64.b64encode(img_data).decode('utf-8')
+
+    doc.close()
+
+    print(f"[INFO] 已提取第一页: {output_filename}, base64: {len(base64_data)} chars", file=sys.stderr)
+
+    return {
+        'page': 1,
+        'type': 'first_page',
+        'path': output_path,
+        'base64_data': base64_data,
+        'filename': output_filename,
+        'mime_type': 'image/png'
+    }
+
+
+def extract_images(pdf_path, output_dir, dpi=300):
+    """
+    从PDF提取图表（使用混合策略）+ 第一页完整截图
+
+    Args:
+        pdf_path: PDF文件路径
+        output_dir: 图片输出目录
+        dpi: 输出图片分辨率
+
+    Returns:
+        提取结果字典，包含 figures 和 first_page
     """
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF文件不存在: {pdf_path}")
@@ -223,6 +273,9 @@ def extract_images(pdf_path, output_dir, dpi=300):
 
     doc = fitz.open(pdf_path)
     all_results = []
+
+    # 提取第一页
+    first_page_info = extract_first_page(pdf_path, output_dir, dpi)
 
     print(f"[INFO] PDF共有 {len(doc)} 页", file=sys.stderr)
 
@@ -320,7 +373,10 @@ def extract_images(pdf_path, output_dir, dpi=300):
     fig_nums = [f"图{r['figure_index']}" for r in all_results]
     print(f"[INFO] 已按图号排序: {fig_nums}", file=sys.stderr)
 
-    return all_results
+    return {
+        'figures': all_results,
+        'first_page': first_page_info
+    }
 
 
 class ImageExtractHandler(BaseHTTPRequestHandler):
@@ -359,8 +415,8 @@ class ImageExtractHandler(BaseHTTPRequestHandler):
 
             print(f"[{self.log_date_time_string()}] 收到提取请求: {pdf_path}", file=sys.stderr)
 
-            # 提取图表
-            results = extract_images(pdf_path, output_dir)
+            # 提取图表和第一页
+            result = extract_images(pdf_path, output_dir)
 
             # 返回结果
             self.send_response(200)
@@ -368,12 +424,13 @@ class ImageExtractHandler(BaseHTTPRequestHandler):
             self.end_headers()
             response = {
                 "success": True,
-                "figures": results,
-                "count": len(results)
+                "figures": result['figures'],
+                "first_page": result['first_page'],
+                "count": len(result['figures'])
             }
             self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
 
-            print(f"[{self.log_date_time_string()}] 提取成功，返回 {len(results)} 个图表", file=sys.stderr)
+            print(f"[{self.log_date_time_string()}] 提取成功，返回 {len(result['figures'])} 个图表 + 第一页", file=sys.stderr)
 
         except Exception as e:
             print(f"[{self.log_date_time_string()}] 提取失败: {e}", file=sys.stderr)

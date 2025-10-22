@@ -263,7 +263,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 从HTTP Request节点获取图片提取服务的响应\nconst response = $input.first().json;\n\n// 检查提取是否成功\nif (!response.success) {\n  const errorMsg = response.error || '未知错误';\n  console.error('图片提取失败:', errorMsg);\n  return [];\n}\n\n// 获取图表信息\nconst figures = response.figures || [];\n\nif (figures.length === 0) {\n  console.log('未提取到任何图表');\n  return [];\n}\n\nconsole.log(`成功提取 ${figures.length} 个图表，转换为binary格式...`);\n\n// 将每个图片的base64数据转换为n8n的binary格式\nconst results = [];\nfor (let idx = 0; idx < figures.length; idx++) {\n  const fig = figures[idx];\n  \n  if (!fig.base64_data) {\n    console.error(`  [${idx + 1}/${figures.length}] 缺少 base64_data`);\n    continue;\n  }\n  \n  console.log(`  [${idx + 1}/${figures.length}] ${fig.filename} (${fig.base64_data.length} chars)`);\n  \n  results.push({\n    json: {\n      imageIndex: idx,\n      fileName: fig.filename,\n      page: fig.page,\n      figureIndex: fig.figure_index,\n      caption: fig.caption\n    },\n    binary: {\n      data: {\n        data: fig.base64_data,\n        mimeType: fig.mime_type || 'image/png',\n        fileName: fig.filename,\n        fileExtension: 'png'\n      }\n    }\n  });\n}\n\nconsole.log(`转换完成，成功 ${results.length}/${figures.length} 个`);\nreturn results;"
+        "jsCode": "// 从HTTP Request节点获取图片提取服务的响应\nconst response = $input.first().json;\n\n// 检查提取是否成功\nif (!response.success) {\n  const errorMsg = response.error || '未知错误';\n  console.error('图片提取失败:', errorMsg);\n  return [];\n}\n\n// 获取图表信息和第一页\nconst figures = response.figures || [];\nconst firstPage = response.first_page;\n\nif (figures.length === 0) {\n  console.log('未提取到任何图表');\n}\n\nconsole.log(`成功提取 ${figures.length} 个图表，转换为binary格式...`);\n\n// 将每个图片的base64数据转换为n8n的binary格式\nconst results = [];\n\n// 首先添加第一页（如果存在）\nif (firstPage && firstPage.base64_data) {\n  console.log(`添加第一页: ${firstPage.filename} (${firstPage.base64_data.length} chars)`);\n  results.push({\n    json: {\n      type: 'first_page',\n      fileName: firstPage.filename,\n      page: firstPage.page\n    },\n    binary: {\n      data: {\n        data: firstPage.base64_data,\n        mimeType: firstPage.mime_type || 'image/png',\n        fileName: firstPage.filename,\n        fileExtension: 'png'\n      }\n    }\n  });\n}\n\n// 然后添加所有图表\nfor (let idx = 0; idx < figures.length; idx++) {\n  const fig = figures[idx];\n  \n  if (!fig.base64_data) {\n    console.error(`  [${idx + 1}/${figures.length}] 缺少 base64_data`);\n    continue;\n  }\n  \n  console.log(`  [${idx + 1}/${figures.length}] ${fig.filename} (${fig.base64_data.length} chars)`);\n  \n  results.push({\n    json: {\n      type: 'figure',\n      imageIndex: idx,\n      fileName: fig.filename,\n      page: fig.page,\n      figureIndex: fig.figure_index,\n      caption: fig.caption\n    },\n    binary: {\n      data: {\n        data: fig.base64_data,\n        mimeType: fig.mime_type || 'image/png',\n        fileName: fig.filename,\n        fileExtension: 'png'\n      }\n    }\n  });\n}\n\nconsole.log(`转换完成，成功 ${results.length} 个图片（含第一页）`);\nreturn results;"
       },
       "id": "d21e01e0-2dfe-4c31-a48c-df6df5b01c39",
       "name": "处理图片路径",
@@ -324,7 +324,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nif (!items.length) {\n  return [];\n}\nconst baseItem = JSON.parse(JSON.stringify(items[0].json || {}));\nconst uploadedImages = Array.isArray(baseItem.uploadedImages) ? baseItem.uploadedImages : [];\nlet content = baseItem.content || '';\nif (uploadedImages.length && content.includes('<img')) {\n  let counter = 0;\n  content = content.replace(/<img[^>]*>/g, (tag) => {\n    const upload = uploadedImages[counter];\n    counter += 1;\n    if (!upload || !upload.url) {\n      return tag;\n    }\n    let updatedTag = tag.replace(/src=\"[^\"]+\"/, `src=\"${upload.url}\"`);\n    if (/data-src=\"[^\"]+\"/.test(updatedTag)) {\n      updatedTag = updatedTag.replace(/data-src=\"[^\"]+\"/, `data-src=\"${upload.url}\"`);\n    } else {\n      updatedTag = updatedTag.replace('<img', `<img data-src=\"${upload.url}\"`);\n    }\n    return updatedTag;\n  });\n}\nbaseItem.content = content;\nbaseItem.uploadedImages = uploadedImages;\nreturn [{ json: baseItem }];"
+        "jsCode": "// Merge节点将两个输入合并成一个item，所有字段都在同一个对象里\nconst mergedData = $input.first().json;\n\n// 从合并后的数据中提取所有字段\nconst uploadedImages = Array.isArray(mergedData.uploadedImages) ? mergedData.uploadedImages : [];\nlet content = mergedData.content || '';\nconst firstPageUrl = mergedData.url || null;  // 来自\"上传第一页到微信\"的url字段\n\nconsole.log('合并后的数据keys:', Object.keys(mergedData));\nconsole.log('第一页图片URL:', firstPageUrl);\nconsole.log('正文图片数量:', uploadedImages.length);\n\n// 替换正文中的图片链接\nif (uploadedImages.length && content.includes('<img')) {\n  let counter = 0;\n  content = content.replace(/<img[^>]*>/g, (tag) => {\n    const upload = uploadedImages[counter];\n    counter += 1;\n    if (!upload || !upload.url) {\n      return tag;\n    }\n    let updatedTag = tag.replace(/src=\"[^\"]+\"/, `src=\"${upload.url}\"`);\n    if (/data-src=\"[^\"]+\"/.test(updatedTag)) {\n      updatedTag = updatedTag.replace(/data-src=\"[^\"]+\"/, `data-src=\"${upload.url}\"`);\n    } else {\n      updatedTag = updatedTag.replace('<img', `<img data-src=\"${upload.url}\"`);\n    }\n    return updatedTag;\n  });\n  console.log(`已替换 ${counter} 个正文图片链接`);\n}\n\n// 在summary（blockquote）后插入第一页图片\nif (firstPageUrl) {\n  console.log(`准备插入第一页图片: ${firstPageUrl}`);\n  // 找到第一个</blockquote>标签后插入图片\n  const blockquoteEndRegex = /<\\/blockquote>/i;\n  if (blockquoteEndRegex.test(content)) {\n    const firstPageImg = `<p style=\"text-align: center;\"><img src=\"${firstPageUrl}\" data-src=\"${firstPageUrl}\" style=\"max-width: 100%; height: auto;\" /></p>`;\n    content = content.replace(blockquoteEndRegex, `</blockquote>${firstPageImg}`);\n    console.log('✓ 第一页图片已成功插入到summary后');\n  } else {\n    console.log('⚠ 警告: 未找到blockquote标签');\n  }\n} else {\n  console.log('⚠ 警告: 未找到第一页图片URL');\n}\n\nreturn [{ \n  json: {\n    title: mergedData.title,\n    summary: mergedData.summary,\n    content: content,\n    uploadedImages: uploadedImages,\n    debug_content_length: content.length,\n    debug_first_page_inserted: !!firstPageUrl\n  }\n}];"
       },
       "name": "替换正文图片链接",
       "type": "n8n-nodes-base.code",
@@ -352,6 +352,34 @@
     },
     {
       "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-first-page-content-id",
+      "name": "合并第一页和正文内容",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        896,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 过滤出类型为 figure 的图片\nconst items = $input.all();\nconst figureItems = items.filter(item => item.json.type === 'figure');\n\nif (figureItems.length === 0) {\n  console.log('未找到任何图表');\n  return [];\n}\n\nconsole.log(`找到 ${figureItems.length} 个图表`);\nreturn figureItems;"
+      },
+      "id": "filter-figures-node-id",
+      "name": "过滤正文图片",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -80
+      ]
+    },
+    {
+      "parameters": {
         "jsCode": "// 提取第一张图作为封面\nconst items = $input.all();\n\nif (!items || items.length === 0) {\n  throw new Error('没有可用的图片数据');\n}\n\n// 只返回第一张图片作为封面\nreturn [items[0]];"
       },
       "id": "cover-extractor-new-id",
@@ -359,9 +387,42 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -480,
+        -288,
         16
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 过滤出类型为 first_page 的图片\nconst items = $input.all();\nconst firstPageItems = items.filter(item => item.json.type === 'first_page');\n\nif (firstPageItems.length === 0) {\n  console.log('未找到第一页图片');\n  return [];\n}\n\nconsole.log(`找到第一页图片: ${firstPageItems[0].json.fileName}`);\nreturn firstPageItems;"
+      },
+      "id": "first-page-filter-node",
+      "name": "过滤第一页图片",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "media",
+        "operation": "media:uploadOther"
+      },
+      "id": "first-page-upload-node",
+      "name": "上传第一页到微信",
+      "type": "n8n-nodes-wechat-offiaccount.wechatOfficialAccountNode",
+      "typeVersion": 1,
+      "position": [
+        -288,
+        96
+      ],
+      "credentials": {
+        "wechatOfficialAccountCredentialsApi": {
+          "id": "ktFqa6y7JD7C2ZBV",
+          "name": "Wechat Official Account Credentials account"
+        }
+      }
     }
   ],
   "connections": {
@@ -550,6 +611,22 @@
       "main": [
         [
           {
+            "node": "过滤正文图片",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "过滤第一页图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "过滤正文图片": {
+      "main": [
+        [
+          {
             "node": "上传正文图片",
             "type": "main",
             "index": 0
@@ -599,7 +676,7 @@
       "main": [
         [
           {
-            "node": "替换正文图片链接",
+            "node": "合并第一页和正文内容",
             "type": "main",
             "index": 0
           }
@@ -611,6 +688,39 @@
         [
           {
             "node": "上传封面到微信2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "过滤第一页图片": {
+      "main": [
+        [
+          {
+            "node": "上传第一页到微信",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传第一页到微信": {
+      "main": [
+        [
+          {
+            "node": "合并第一页和正文内容",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "合并第一页和正文内容": {
+      "main": [
+        [
+          {
+            "node": "替换正文图片链接",
             "type": "main",
             "index": 0
           }
