@@ -38,8 +38,8 @@ const server = http.createServer(async (req, res) => {
 
       console.log(`[${new Date().toISOString()}] 收到转换请求，markdown长度: ${markdown.length}${imagePaths ? `, 图片数量: ${imagePaths.length}` : ''}`);
 
-      // 调用转换脚本
-      const scriptPath = path.join(__dirname, 'dist', 'index.js');
+      // 调用转换脚本（使用修复版本）
+      const scriptPath = path.join(__dirname, 'dist', 'index-fixed.js');
       const args = ['--stdin'];
       if (imagePaths && Array.isArray(imagePaths) && imagePaths.length > 0) {
         args.push('--images', JSON.stringify(imagePaths));

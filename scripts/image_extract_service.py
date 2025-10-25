@@ -23,7 +23,12 @@ except ImportError as e:
 
 def detect_figure_captions(page):
     """
-    检测页面中的图表标题（加粗的Fig.X格式）
+    检测页面中的图表标题
+
+    改进的检测方法：
+    1. 支持 FIG（全大写）格式
+    2. 检测格式变化（字体大小、样式变化）作为标题特征
+    3. 放宽加粗要求，允许通过格式变化识别
     """
     captions = []
     exclude_keywords = ['reveals', 'shows', 'are depicted', 'is shown',
@@ -36,13 +41,35 @@ def detect_figure_captions(page):
             for line in block.get("lines", []):
                 line_text = ""
                 is_bold = False
+                has_format_change = False
                 line_bbox = None
+                spans_info = []  # 记录每个 span 的信息
 
                 for span in line.get("spans", []):
-                    line_text += span.get("text", "")
+                    span_text = span.get("text", "")
+                    line_text += span_text
                     flags = span.get("flags", 0)
-                    if flags & 16:
+                    font_name = span.get("font", "").lower()
+                    font_size = span.get("size", 0)
+
+                    # Method 1: PDF bold flag
+                    is_bold_by_flag = (flags & 16)
+
+                    # Method 2: Font name keyword detection
+                    bold_keywords = ['bold', 'heavy', 'black', 'semibold', 'demi']
+                    is_bold_by_fontname = any(keyword in font_name for keyword in bold_keywords)
+
+                    if is_bold_by_flag or is_bold_by_fontname:
                         is_bold = True
+
+                    # 记录 span 信息用于格式变化检测
+                    spans_info.append({
+                        'text': span_text,
+                        'font_name': font_name,
+                        'font_size': font_size,
+                        'is_bold': is_bold_by_flag or is_bold_by_fontname
+                    })
+
                     if line_bbox is None:
                         line_bbox = list(span["bbox"])
                     else:
@@ -51,13 +78,49 @@ def detect_figure_captions(page):
                         line_bbox[2] = max(line_bbox[2], span["bbox"][2])
                         line_bbox[3] = max(line_bbox[3], span["bbox"][3])
 
+                # 检测格式变化：如果一行中有多个 span，且字体样式或大小有变化
+                if len(spans_info) > 1:
+                    # 检查第一个 span 和后续 span 的格式是否不同
+                    first_span = spans_info[0]
+                    for span in spans_info[1:]:
+                        # 字体名称变化
+                        if span['font_name'] != first_span['font_name']:
+                            has_format_change = True
+                        # 字体大小显著变化（超过 1pt）
+                        if abs(span['font_size'] - first_span['font_size']) > 1:
+                            has_format_change = True
+                        # 加粗状态变化
+                        if span['is_bold'] != first_span['is_bold']:
+                            has_format_change = True
+
                 if line_text and line_bbox:
-                    if re.match(r'^(Fig\.|Figure|fig\.|figure|FIG\.)\s*\d+', line_text.strip()):
-                        if is_bold:
+                    line_stripped = line_text.lstrip()  # 只去除左边空格
+
+                    # 扩展的图表标题格式匹配
+                    # 支持: Fig., Figure, fig., figure, FIG., FIG, Fig (不带点)
+                    fig_patterns = [
+                        r'^(Fig\.|Figure|fig\.|figure|FIG\.|FIG|Fig)\s*\d+',  # 基本格式
+                        r'^(Fig\.|Figure|fig\.|figure|FIG\.|FIG|Fig)\s+\d+',  # 多个空格
+                        r'^(Fig\.|Figure|fig\.|figure|FIG\.|FIG|Fig)\s*\d+[a-z]?',  # 带字母后缀 (Fig. 1a)
+                    ]
+
+                    # 检查是否匹配任一图表格式
+                    matches_pattern = any(re.match(pattern, line_stripped) for pattern in fig_patterns)
+
+                    if matches_pattern:
+                        # 放宽检测条件：加粗 OR 格式变化
+                        if is_bold or has_format_change:
                             if not any(keyword in line_text for keyword in exclude_keywords):
+                                detection_method = []
+                                if is_bold:
+                                    detection_method.append("加粗")
+                                if has_format_change:
+                                    detection_method.append("格式变化")
+
+                                print(f"[DEBUG] 检测到图片标题 ({'+'.join(detection_method)}): {line_stripped[:80]}", file=sys.stderr)
                                 captions.append({
                                     'bbox': line_bbox,
-                                    'text': line_text.strip(),
+                                    'text': line_stripped,
                                     'y_top': line_bbox[1]
                                 })
 
@@ -103,9 +166,18 @@ def generate_text_stripped_image(page, dpi=300):
 def detect_graphical_content(text_stripped_img, page_rect, scale_x, scale_y, min_size_pt=10):
     """从去除文字的图片中检测图形轮廓"""
     gray = cv2.cvtColor(text_stripped_img, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
+
+    # 降低阈值使检测更敏感（从240改为235）
+    _, thresh = cv2.threshold(gray, 235, 255, cv2.THRESH_BINARY_INV)
+
     kernel = np.ones((5, 5), np.uint8)
-    dilation = cv2.dilate(thresh, kernel, iterations=1)
+
+    # 添加形态学闭运算，填补小孔洞和连接断开的轮廓
+    closing = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    # 膨胀处理，使轮廓更完整
+    dilation = cv2.dilate(closing, kernel, iterations=1)
+
     contours, _ = cv2.findContours(dilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     min_size_px = min_size_pt / scale_x
@@ -125,13 +197,60 @@ def detect_graphical_content(text_stripped_img, page_rect, scale_x, scale_y, min
     return potential_boxes
 
 
-def associate_figures_with_captions(graphical_boxes, captions, page_rect):
+def expand_bbox_to_whitespace(merged_bbox, text_regions, page_rect):
+    """
+    将图形边界框向左右两侧扩展到空白区域
+    停止条件：遇到文字区域边界
+
+    Args:
+        merged_bbox: [x0, y0, x1, y1] 原始图形边界框
+        text_regions: 页面上所有文字区域的列表
+        page_rect: 页面矩形
+
+    Returns:
+        扩展后的边界框 [x0, y0, x1, y1]
+    """
+    x0, y0, x1, y1 = merged_bbox
+
+    # 找出与当前图形区域在垂直方向有重叠的所有文字区域
+    overlapping_text = []
+    for tr in text_regions:
+        # 检查垂直方向是否有重叠（文字的y范围与图形的y范围是否相交）
+        if not (tr[3] < y0 or tr[1] > y1):  # 有重叠
+            overlapping_text.append(tr)
+
+    # 向左探索：找到左边最近的文字区域右边界
+    left_boundary = 0  # 默认扩展到页面左边缘
+    for tr in overlapping_text:
+        if tr[2] < x0:  # 文字区域在图形左边
+            # 找到最近的（最右边的）文字区域
+            left_boundary = max(left_boundary, tr[2])
+
+    # 向右探索：找到右边最近的文字区域左边界
+    right_boundary = page_rect.width  # 默认扩展到页面右边缘
+    for tr in overlapping_text:
+        if tr[0] > x1:  # 文字区域在图形右边
+            # 找到最近的（最左边的）文字区域
+            right_boundary = min(right_boundary, tr[0])
+
+    # 添加更大的margin，在文字边界外留出空白（单位：PDF点）
+    TEXT_MARGIN = 15  # 文字区域外的空白距离
+    expanded_x0 = max(left_boundary + TEXT_MARGIN, 0)
+    expanded_x1 = min(right_boundary - TEXT_MARGIN, page_rect.width)
+
+    print(f"  [边界扩展] 原始: x=[{x0:.1f}, {x1:.1f}] → 扩展: x=[{expanded_x0:.1f}, {expanded_x1:.1f}]", file=sys.stderr)
+
+    return [expanded_x0, y0, expanded_x1, y1]
+
+
+def associate_figures_with_captions(graphical_boxes, captions, page_rect, text_regions):
     """
     基于标题位置关联图形框
 
     关键：
     - 上边界：OpenCV检测的最小y值（确保图形顶部完整）
     - 下边界：标题顶部位置（图表和标题之间自然有间隔）
+    - 左右边界：扩展到空白区域，直到遇到文字
     """
     if not captions:
         return []
@@ -167,9 +286,12 @@ def associate_figures_with_captions(graphical_boxes, captions, page_rect):
                 caption_y_top  # 下边界直接用标题顶部
             ]
 
+            # 向左右扩展边界到空白区域
+            expanded_bbox = expand_bbox_to_whitespace(merged_bbox, text_regions, page_rect)
+
             results.append({
                 'caption': caption,
-                'figure_bbox': merged_bbox,
+                'figure_bbox': expanded_bbox,
                 'subfigures': figures_in_region
             })
 
@@ -293,6 +415,9 @@ def extract_images(pdf_path, output_dir, dpi=300):
         # 2. 生成无文字图片
         text_stripped_img, scale_x, scale_y = generate_text_stripped_image(page, dpi)
 
+        # 2.5. 获取文字区域（用于边界扩展）
+        text_regions = get_text_regions(page)
+
         # 3. 检测图形内容
         page_rect = page.rect
         graphical_boxes = detect_graphical_content(
@@ -305,7 +430,7 @@ def extract_images(pdf_path, output_dir, dpi=300):
 
         # 4. 关联图形与标题
         figure_caption_pairs = associate_figures_with_captions(
-            graphical_boxes, captions, page_rect
+            graphical_boxes, captions, page_rect, text_regions
         )
         print(f"  成功关联 {len(figure_caption_pairs)} 个图表", file=sys.stderr)
 
