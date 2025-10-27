@@ -116,9 +116,23 @@ docker run -d --restart unless-stopped \
   n8nio/n8n
 ```
 
-> **重要**：`-e N8N_COMMUNITY_PACKAGES_ENABLED=true` 参数用于启用社区节点支持，这是安装微信公众号节点的必要条件。
+> **重要**：`-e N8N_COMMUNITY_PACKAGES_ENABLED=true` 参数用于启用社区节点支持，这是安装微信公众号节点的必要条件。https://github.com/other-blowsnow/n8n-nodes-wechat-offiaccount
 
 访问 http://localhost:5678 即可看到 n8n 工作界面。
+
+---
+
+## 🎬 快速开始流程
+
+完整的使用流程如下：
+
+1. **安装依赖** → 安装 Docker、Node.js、Python 和相关包
+2. **安装社区节点** → 在 n8n 中安装 `n8n-nodes-wechat-offiaccount`
+3. **启动服务** → 启动 n8n、Markdown 转换、PDF 提取三个服务
+4. **配置凭证** → 配置 mdnice Cookie、微信公众号 AppID/AppSecret、AI 模型密钥
+5. **准备 PDF** → 将论文 PDF 放入 `pdfs/` 文件夹
+6. **执行工作流** → 在 n8n 中点击"Execute workflow"
+7. **查看结果** → 在微信公众平台查看生成的草稿
 
 ---
 
@@ -130,6 +144,10 @@ docker run -d --restart unless-stopped \
   - [ ] Docker 已安装并运行
   - [ ] Node.js 18+ 已安装
   - [ ] Python 3.8+ 已安装
+
+- [ ] **项目文件夹已创建**
+  - [ ] `pdfs/` 文件夹已创建（用于放置待处理的 PDF）
+  - [ ] 已将至少一个 PDF 文件放入 `pdfs/` 文件夹
 
 - [ ] **n8n 社区节点已安装**
   - [ ] 启用了社区节点支持（`N8N_COMMUNITY_PACKAGES_ENABLED=true`）
@@ -160,6 +178,105 @@ docker run -d --restart unless-stopped \
   - [ ] n8n 服务运行中（端口 5678）
   - [ ] Markdown 转换服务运行中（端口 3456）
   - [ ] PDF 提取服务运行中（端口 3457）
+
+---
+
+## 📖 使用指南
+
+### 输入：准备 PDF 文档
+
+1. **创建 pdfs 文件夹**（如果不存在）
+   ```bash
+   mkdir pdfs
+   ```
+
+2. **将论文 PDF 放入 pdfs 文件夹**
+   - 支持单个或多个 PDF 文件
+   - 文件路径：`项目根目录/pdfs/*.pdf`
+   - 例如：`E:/code/n8n_workflow/pdfs/paper1.pdf`
+
+3. **文件命名建议**
+   - 使用有意义的英文名称，如 `robotics_wheel_2024.pdf`
+   - 避免使用中文文件名或特殊字符
+   - 文件名将作为文章标识符
+
+> **提示**：工作流会自动读取 `pdfs` 文件夹中的所有 PDF 文件并逐个处理。
+
+### 执行：运行工作流
+
+1. **访问 n8n 界面**
+   - 打开浏览器访问 http://localhost:5678
+   - 登录你的 n8n 账号
+
+2. **打开工作流**
+   - 在左侧工作流列表中找到 **"论文解读自动生成微信推文"**
+   - 点击打开工作流
+
+3. **执行工作流**
+   - 点击右上角的 **"Execute workflow"** 按钮
+   - 工作流将自动执行以下步骤：
+     1. 读取 `pdfs` 文件夹中的所有 PDF
+     2. 提取 PDF 文本内容和图片
+     3. 使用 AI 生成推文内容（Markdown 格式）
+     4. 将 Markdown 转换为微信富文本格式
+     5. 上传图片到微信公众号素材库
+     6. 生成并保存微信公众号草稿
+
+4. **监控执行进度**
+   - 每个节点执行后会显示绿色对勾
+   - 点击节点可查看输入输出数据
+   - 如果出现红色错误标记，点击查看错误详情
+
+### 输出：查看结果
+
+#### 1. 临时文件输出
+
+提取的图片和中间文件保存在 `temp` 文件夹：
+
+```
+temp/
+└── batch_{时间戳}/          # 每次执行创建一个批次文件夹
+    └── {论文名称}/           # 每篇论文一个子文件夹
+        ├── figure_1.png     # 提取的图片
+        ├── figure_2.png
+        └── ...
+```
+
+例如：`E:/code/n8n_workflow/temp/batch_1234567890/paper1/figure_1.png`
+
+#### 2. 微信公众号草稿
+
+工作流执行成功后，文章会自动保存到微信公众号草稿箱：
+
+1. **登录微信公众平台**
+   - 访问 [https://mp.weixin.qq.com](https://mp.weixin.qq.com)
+
+2. **查看草稿**
+   - 进入 **素材管理 → 草稿**
+   - 找到新生成的文章草稿
+
+3. **编辑和发布**
+   - 点击草稿进行预览
+   - 可以进一步编辑标题、摘要、正文
+   - 满意后点击 **发表** 或 **群发**
+
+#### 3. n8n 执行记录
+
+在 n8n 中可以查看详细的执行记录：
+
+- 点击左侧的 **Executions**（执行历史）
+- 查看每次执行的详细数据
+- 可以下载执行结果或重新执行
+
+### 批量处理
+
+工作流支持批量处理多个 PDF：
+
+1. 将多个 PDF 文件放入 `pdfs` 文件夹
+2. 执行一次工作流
+3. 工作流会逐个处理每个 PDF，生成对应的草稿
+
+> **注意**：批量处理时间较长，建议先测试单个 PDF，确认配置无误后再批量处理。
 
 ---
 
@@ -292,14 +409,30 @@ Markdown 转微信服务需要 mdnice 登录凭证才能使用样式。
 Auto_paper_for_wechat/
 ├── README.md                               # 本文档
 ├── wechat_auto_paragraph.json              # 主工作流文件
+├── pdfs/                                   # PDF 输入文件夹（需手动创建）
+│   ├── paper1.pdf                          # 待处理的论文 PDF
+│   ├── paper2.pdf
+│   └── ...
+├── temp/                                   # 临时文件输出文件夹（自动创建）
+│   └── batch_{时间戳}/                     # 每次执行创建批次文件夹
+│       └── {论文名称}/                     # 每篇论文的临时文件
+│           ├── figure_1.png                # 提取的图片
+│           └── ...
 ├── scripts/
 │   ├── image_extract_service.py            # PDF 图片提取服务（端口 3457）
 │   └── md-to-wechat/                       # Markdown 转微信服务
 │       ├── server.js                       # HTTP 服务（端口 3456）
 │       ├── cookies.json                    # mdnice 登录凭证（需配置）
 │       └── dist/index-fixed.js             # 核心转换脚本
-└── temp/                                   # 临时文件目录
 ```
+
+### 核心文件夹说明
+
+| 文件夹 | 用途 | 说明 |
+|--------|------|------|
+| `pdfs/` | **输入**：存放待处理的论文 PDF | 需手动创建并放入 PDF 文件 |
+| `temp/` | **输出**：存放提取的图片和中间文件 | 自动创建，可定期清理 |
+| `scripts/` | **服务**：PDF 提取和 Markdown 转换服务 | 需要保持运行 |
 
 ---
 
@@ -356,6 +489,36 @@ pkill -f "python.*image_extract_service"
 1. 检查 n8n 是否启用了社区节点支持（环境变量 `N8N_COMMUNITY_PACKAGES_ENABLED=true`）
 2. 在 n8n 设置中安装 `n8n-nodes-wechat-offiaccount`
 3. 安装后重启 n8n 服务：`docker restart n8n`
+
+### Q: 工作流找不到 PDF 文件？
+
+1. 确保已创建 `pdfs` 文件夹：`mkdir pdfs`
+2. 确保 PDF 文件已放入 `pdfs` 文件夹
+3. 检查 Docker 卷挂载是否正确：`-v $(pwd):/files`
+4. 在 n8n 中检查"读取所有PDF文件"节点的路径配置：`/files/pdfs/*.pdf`
+
+### Q: 生成的草稿中图片没有显示？
+
+1. 检查微信公众号凭证是否正确配置
+2. 确认 IP 白名单已正确设置
+3. 查看"上传正文图片到微信"节点的执行结果，确认图片上传成功
+4. 检查 PDF 中是否有可提取的图片
+
+### Q: Markdown 转换失败？
+
+检查 `cookies.json` 是否正确配置，token 是否过期（有效期约30天）。
+
+### Q: AI 生成内容质量不理想？
+
+1. 检查 AI 模型配置，尝试使用更强大的模型（如 GPT-4、Claude）
+2. 调整提示词模板，在"准备AI提示词"节点中修改
+3. 确保 PDF 文本提取完整，检查"提取PDF文本"节点输出
+
+### Q: 批量处理时某个 PDF 失败了怎么办？
+
+1. 工作流会继续处理后续 PDF
+2. 在 n8n 执行历史中查看具体失败原因
+3. 修复问题后，可以单独处理失败的 PDF
 
 ### Q: 端口被占用怎么办？
 

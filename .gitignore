@@ -58,8 +58,9 @@ list_*.py
 apply_*.py
 update_workflow.py
 
-# PDF test files
+# PDF test files (但保留 pdfs 文件夹结构)
 *.pdf
+!pdfs/.gitkeep
 
 # Temporary data files
 nul
