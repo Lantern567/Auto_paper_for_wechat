@@ -564,3 +564,4 @@ MIT License
 - [n8n](https://n8n.io/) - 开源工作流自动化平台
 - [mdnice](https://mdnice.com/) - Markdown 微信排版工具
 - [微信公众平台](https://mp.weixin.qq.com/) - 微信公众号开放接口
+- [n8n-nodes-wechat-offiaccount](https://github.com/other-blowsnow/n8n-nodes-wechat-offiaccount) - 微信公众号n8n接口
