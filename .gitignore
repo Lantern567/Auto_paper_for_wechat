@@ -82,3 +82,5 @@ PDFigCapX_study/
 
 # PowerShell installer scripts
 install-claude-vscode.ps1
+scripts/md-to-wechat/cookies.json
+scripts/md-to-wechat/cookies.json

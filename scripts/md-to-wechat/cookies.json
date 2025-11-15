@@ -1,7 +1,7 @@
 [
   {
     "name": "token",
-    "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJNVE0yT0RBdyIsImlzcyI6IjkwYjlhNjNjODFjYzYzNTg4NDg2IiwiaWF0IjoxNzYwMDc3MTIwLCJhdWQiOiJtZG5pY2UtYXBpIiwiZXhwIjoxNzYyNjY5MTIwLCJuYmYiOjE3NjAwNzcxMjB9.XKMG_bo8BZMCwVUTQ_NI02FCKJt4qc-Vy9Z6FoiYBuY",
+    "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJNVE0yT0RBdyIsImlzcyI6IjkwYjlhNjNjODFjYzYzNTg4NDg2IiwiaWF0IjoxNzYzMjAxNTAyLCJhdWQiOiJtZG5pY2UtYXBpIiwiZXhwIjoxNzY1NzkzNTAyLCJuYmYiOjE3NjMyMDE1MDJ9.LLxS5cUr7VmVZuXM1rZ2iSgLvabN1_z1Qh8rz6NCIk4",
     "domain": ".mdnice.com",
     "path": "/",
     "httpOnly": false,

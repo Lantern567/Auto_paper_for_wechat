@@ -31,6 +31,7 @@ docker pull n8nio/n8n
 # 2. 安装 Markdown 转换服务依赖
 cd scripts/md-to-wechat
 npm install
+npm run build  # 编译 TypeScript 代码生成 dist 文件夹
 npx playwright install chromium
 
 # 3. 安装 PDF 提取服务依赖
@@ -421,9 +422,14 @@ Auto_paper_for_wechat/
 ├── scripts/
 │   ├── image_extract_service.py            # PDF 图片提取服务（端口 3457）
 │   └── md-to-wechat/                       # Markdown 转微信服务
+│       ├── src/                            # TypeScript 源码
+│       │   └── index.ts                    # 转换脚本源码
+│       ├── dist/                           # 编译产物（不提交到 Git）
+│       │   └── index.js                    # 由 TypeScript 编译生成
 │       ├── server.js                       # HTTP 服务（端口 3456）
 │       ├── cookies.json                    # mdnice 登录凭证（需配置）
-│       └── dist/index-fixed.js             # 核心转换脚本
+│       ├── package.json                    # 依赖配置
+│       └── tsconfig.json                   # TypeScript 配置
 ```
 
 ### 核心文件夹说明
@@ -482,6 +488,24 @@ pkill -f "python.*image_extract_service"
 ---
 
 ## 🚨 常见问题
+
+### Q: 克隆项目后找不到 `scripts/md-to-wechat/dist` 文件夹？
+
+**这是正常的！** `dist` 文件夹是 TypeScript 编译产物，不会提交到 Git 仓库。
+
+**解决方法**：
+```bash
+cd scripts/md-to-wechat
+npm install          # 安装依赖
+npm run build        # 编译生成 dist 文件夹
+```
+
+编译成功后会自动生成 `dist/index.js` 文件。
+
+**原理说明**：
+- 源码在 `src/index.ts`（TypeScript）
+- 通过 `tsc` 编译器编译为 `dist/index.js`（JavaScript）
+- `dist` 文件夹被 `.gitignore` 忽略，因为它可以随时从源码重新生成
 
 ### Q: 找不到微信公众号节点？
 
@@ -565,3 +589,4 @@ MIT License
 - [mdnice](https://mdnice.com/) - Markdown 微信排版工具
 - [微信公众平台](https://mp.weixin.qq.com/) - 微信公众号开放接口
 - [n8n-nodes-wechat-offiaccount](https://github.com/other-blowsnow/n8n-nodes-wechat-offiaccount) - 微信公众号n8n接口
+
