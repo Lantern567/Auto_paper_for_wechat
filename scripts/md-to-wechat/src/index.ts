@@ -1,11 +1,7 @@
 /**
- * 🔧 修复版本 - 解决多次调用预览区不更新的问题
- *
- * 主要改进：
- * 1. ✅ 添加触发预览区更新的逻辑（setValue + undo 技巧）
- * 2. ✅ 使用正确的预览区选择器 (#nice)
- * 3. ✅ 直接从 DOM 提取 HTML，不依赖剪贴板
- * 4. ✅ 支持无头模式
+ * Markdown 转微信公众号格式自动化工具
+ * 使用 mdnice.com 编辑器进行格式转换
+ * 通过剪贴板 API 获取复制的 HTML 内容
  */
 
 import { chromium, Browser, Page } from 'playwright';
@@ -13,12 +9,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const MDNICE_URL = 'https://editor.mdnice.com/?outId=69946bf6aba34f4685748cbc1c4867a7';
+const TIMEOUT = 60000; // 60秒超时
 
 // 配置项
 const CONFIG = {
   HEADLESS: process.env.HEADLESS !== 'false', // 默认无头模式
   TIMEOUT: parseInt(process.env.TIMEOUT || '60000'),
-  RENDER_WAIT: parseInt(process.env.RENDER_WAIT || '5000'), // 增加渲染等待时间到5秒
+  RENDER_WAIT: parseInt(process.env.RENDER_WAIT || '5000'), // 渲染等待时间
 };
 
 /**
@@ -78,30 +75,59 @@ async function injectMarkdownWithUpdate(page: Page, markdown: string): Promise<v
 }
 
 /**
- * 🎯 核心方法：直接从预览区提取 HTML
+ * 🎯 核心方法：点击复制按钮并从剪贴板读取 HTML
  *
- * 使用正确的选择器：#nice
+ * 恢复原来的剪贴板读取方式
  */
 async function extractPreviewHTML(page: Page): Promise<string> {
-  console.error('从预览区提取 HTML...');
+  console.error('点击复制按钮并从剪贴板读取 HTML...');
 
-  const html = await page.evaluate(() => {
-    // ✅ 正确的预览区选择器
-    const preview = document.querySelector('#nice');
+  // 点击右侧第一个图标(复制到公众号)
+  await page.locator('#nice-sidebar-wechat').click();
+  console.error('✓ 已点击复制按钮');
 
-    if (!preview) {
-      throw new Error('未找到预览区元素 #nice');
+  // 等待复制成功提示
+  try {
+    await page.waitForSelector('text=已复制，请到微信公众平台粘贴', {
+      timeout: 5000
+    });
+    console.error('✓ 检测到复制成功提示');
+  } catch (e) {
+    console.error('⚠ 未检测到提示，但继续尝试读取剪贴板');
+  }
+
+  // 等待一下确保复制完成
+  await page.waitForTimeout(1000);
+
+  // 从剪贴板读取 HTML 内容
+  const html = await page.evaluate(async () => {
+    try {
+      // 读取剪贴板中的 HTML 格式内容
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        // 查找 text/html 类型
+        if (item.types.includes('text/html')) {
+          const blob = await item.getType('text/html');
+          const text = await blob.text();
+          return text;
+        }
+      }
+      // 如果没有 HTML,尝试读取纯文本
+      return await navigator.clipboard.readText();
+    } catch (e) {
+      throw new Error('读取剪贴板失败: ' + (e as Error).message);
     }
-
-    // 直接返回 innerHTML
-    return preview.innerHTML;
   });
 
-  console.error(`✓ 提取到 HTML (${html.length} 字符)`);
+  console.error(`✓ 从剪贴板提取到 HTML (${html.length} 字符)`);
 
-  // 放宽验证条件 - 只要有内容即可
+  // 验证内容
   if (!html || html.trim().length === 0) {
-    throw new Error('提取的 HTML 内容为空');
+    throw new Error('剪贴板内容为空');
+  }
+
+  if (html.length < 100) {
+    throw new Error('获取的内容异常短,可能不完整');
   }
 
   return html;
@@ -123,6 +149,7 @@ async function convertMarkdownToWechatHTML(markdown: string): Promise<string> {
 
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      permissions: ['clipboard-read', 'clipboard-write'], // 添加剪贴板权限
     });
 
     // 加载 cookies（如果存在）
