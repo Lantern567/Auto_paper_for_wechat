@@ -144,12 +144,16 @@ async function convertMarkdownToWechatHTML(markdown: string): Promise<string> {
     console.error('启动浏览器...');
     browser = await chromium.launch({
       headless: CONFIG.HEADLESS,
-      args: ['--disable-blink-features=AutomationControlled'],
+      args: ['--disable-blink-features=AutomationControlled'，
+             '--ignore-certificate-errors',                    // 忽略证书错误
+             '--ignore-certificate-errors-spki-list'          // 忽略SPKI列表证书错误
+             ],
     });
 
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       permissions: ['clipboard-read', 'clipboard-write'], // 添加剪贴板权限
+      ignoreHTTPSErrors: true, // 忽略HTTPS错误
     });
 
     // 加载 cookies（如果存在）
