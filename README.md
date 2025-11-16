@@ -291,16 +291,18 @@ Markdown 转微信服务需要 mdnice 登录凭证才能使用样式。
 
 1. **打开浏览器**并访问 [https://mdnice.com](https://mdnice.com)
 2. **登录你的账号**（可以使用微信、GitHub 等方式登录）
-3. **打开浏览器开发者工具**（F12）
-4. **切换到 Application（应用）或 Storage（存储）标签页**
-5. **在左侧找到 Cookies → https://mdnice.com**
-6. **复制以下关键 Cookie 项**：
+3. **跳转至文章编辑页面并选定合适的主题**（选定后拷贝该网页网址https://editor.mdnice.com/?outId=...，用新链接替换scripts/md-to-wechat/src/index.ts文件的原始MDNICE_URL ）
+4. **编译文件** 1. 进入项目目录cd scripts/md-to-wechat  2. 首次使用需要先安装依赖 npm install  3. 编译 TypeScript 代码 npm run build
+5. **打开浏览器开发者工具**（F12）
+6. **切换到 Application（应用）或 Storage（存储）标签页**
+7. **在左侧找到 Cookies → https://mdnice.com**
+8. **复制以下关键 Cookie 项**：
    - `token`（最重要）
    - `username`
    - `userOutId`
    - `avatar`
 
-7. **编辑 `scripts/md-to-wechat/cookies.json`**，按以下格式填入：
+9. **编辑 `scripts/md-to-wechat/cookies.json`**，按以下格式填入：
 
 ```json
 [
