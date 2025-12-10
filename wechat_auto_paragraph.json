@@ -69,31 +69,6 @@
     },
     {
       "parameters": {
-        "modelName": "models/gemini-2.5-pro",
-        "options": {
-          "maxOutputTokens": 65355,
-          "temperature": 0.7,
-          "topK": 40,
-          "topP": 0.95
-        }
-      },
-      "id": "ff548980-9204-4762-a375-f98f17512240",
-      "name": "Gemini 2.5 Pro",
-      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
-      "typeVersion": 1,
-      "position": [
-        -2656,
-        -160
-      ],
-      "credentials": {
-        "googlePalmApi": {
-          "id": "Ix82JRwfawJzI70p",
-          "name": "Google Gemini(PaLM) Api account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "sessionIdType": "customKey",
         "sessionKey": "default_session"
       },
@@ -277,7 +252,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ { \"pdfPath\": $json.pdfPath, \"outputDir\": $json.outputDir } }}",
         "options": {
-          "timeout": 60000
+          "timeout": 600000
         }
       },
       "id": "b216adf4-dc56-4a1a-8d3d-7810b7de3350",
@@ -451,6 +426,35 @@
           "name": "Wechat Official Account Credentials account"
         }
       }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-2.5-pro",
+          "mode": "list",
+          "cachedResultName": "gemini-2.5-pro"
+        },
+        "options": {
+          "maxTokens": "={{ 65355 }}",
+          "temperature": 0.7,
+          "topP": 0.7
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -2656,
+        -160
+      ],
+      "id": "2d6eab9e-3008-4cfc-8d42-5597c34d3a6b",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "skRwiyu4kNEyzKcZ",
+          "name": "OpenAi account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -511,17 +515,6 @@
           {
             "node": "准备AI Prompt",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Gemini 2.5 Pro": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "论文解读AI Agent",
-            "type": "ai_languageModel",
             "index": 0
           }
         ]
@@ -789,13 +782,24 @@
           }
         ]
       ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "论文解读AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "746d7925-7390-4a8d-9931-0419c17fa27f",
+  "versionId": "742a9803-3719-4d7e-98bb-b17ce802cf33",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "55eea1944d6d0944ec0c448021aced11250d527b9d21d7157e4aa73d564b38ed"

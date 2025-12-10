@@ -1,324 +1,73 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PDF图片提取HTTP服务 - 使用混合策略提取学术论文中的图表
+PDF图片提取HTTP服务 - 使用 MinerU 优化版本
+集成 MinerU 的强大文档解析能力,提供更准确的图片识别和标签匹配
 """
 
 import sys
 import json
 import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import urllib.parse
+import base64
 import re
+import tempfile
+import shutil
+from pathlib import Path
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import List, Dict, Optional, Tuple
 
 try:
-    import fitz  # PyMuPDF
-    import cv2
-    import numpy as np
+    import fitz  # PyMuPDF - 用于快速获取第一页
 except ImportError as e:
-    print(f"Required library not installed: {e}", file=sys.stderr)
-    print("Please run: pip install PyMuPDF opencv-python numpy", file=sys.stderr)
-    sys.exit(1)
+    print(f"PyMuPDF not installed: {e}", file=sys.stderr)
+    fitz = None
+
+# MinerU 相关导入
+try:
+    from mineru.cli.client import main as mineru_main
+    from mineru.version import __version__ as mineru_version
+    MINERU_AVAILABLE = True
+except ImportError:
+    MINERU_AVAILABLE = False
+    mineru_main = None
+    mineru_version = None
+    print("[WARN] MinerU 未安装或导入失败，将使用基础模式", file=sys.stderr)
+
+# 配置项
+MINERU_BACKEND = (os.environ.get('MINERU_BACKEND') or 'pipeline').strip()  # pipeline | vlm-transformers
+MINERU_LANG = (os.environ.get('MINERU_LANG') or 'en').strip()  # ch | en
+MINERU_DEVICE = (os.environ.get('MINERU_DEVICE') or 'cpu').strip()  # cpu | cuda | mps
+MINERU_DPI = int(os.environ.get('MINERU_DPI', '300'))
+MINERU_PARSE_FORMULA = os.environ.get('MINERU_PARSE_FORMULA', '1') == '1'
+MINERU_PARSE_TABLE = os.environ.get('MINERU_PARSE_TABLE', '1') == '1'
+
+# 图片匹配相关正则
+FIG_REGEX = re.compile(
+    r'(fig(?:ure)?|extended\s+data\s+fig|supplementary\s+fig|图)\.?\s*(?:\d+\s*[a-z]?)(?:\s*[-:|])?',
+    re.IGNORECASE
+)
+IMAGE_MARKDOWN_PATTERN = re.compile(r'!\[(?P<alt>[^\]]*)\]\((?P<path>[^)]+)\)')
 
 
-def detect_figure_captions(page):
-    """
-    检测页面中的图表标题
-
-    改进的检测方法：
-    1. 支持 FIG（全大写）格式
-    2. 检测格式变化（字体大小、样式变化）作为标题特征
-    3. 放宽加粗要求，允许通过格式变化识别
-    """
-    captions = []
-    exclude_keywords = ['reveals', 'shows', 'are depicted', 'is shown',
-                       'we used', 'can be found', 'are presented']
-
-    blocks = page.get_text("dict")["blocks"]
-
-    for block in blocks:
-        if block.get("type") == 0:
-            for line in block.get("lines", []):
-                line_text = ""
-                is_bold = False
-                has_format_change = False
-                line_bbox = None
-                spans_info = []  # 记录每个 span 的信息
-
-                for span in line.get("spans", []):
-                    span_text = span.get("text", "")
-                    line_text += span_text
-                    flags = span.get("flags", 0)
-                    font_name = span.get("font", "").lower()
-                    font_size = span.get("size", 0)
-
-                    # Method 1: PDF bold flag
-                    is_bold_by_flag = (flags & 16)
-
-                    # Method 2: Font name keyword detection
-                    bold_keywords = ['bold', 'heavy', 'black', 'semibold', 'demi']
-                    is_bold_by_fontname = any(keyword in font_name for keyword in bold_keywords)
-
-                    if is_bold_by_flag or is_bold_by_fontname:
-                        is_bold = True
-
-                    # 记录 span 信息用于格式变化检测
-                    spans_info.append({
-                        'text': span_text,
-                        'font_name': font_name,
-                        'font_size': font_size,
-                        'is_bold': is_bold_by_flag or is_bold_by_fontname
-                    })
-
-                    if line_bbox is None:
-                        line_bbox = list(span["bbox"])
-                    else:
-                        line_bbox[0] = min(line_bbox[0], span["bbox"][0])
-                        line_bbox[1] = min(line_bbox[1], span["bbox"][1])
-                        line_bbox[2] = max(line_bbox[2], span["bbox"][2])
-                        line_bbox[3] = max(line_bbox[3], span["bbox"][3])
-
-                # 检测格式变化：如果一行中有多个 span，且字体样式或大小有变化
-                if len(spans_info) > 1:
-                    # 检查第一个 span 和后续 span 的格式是否不同
-                    first_span = spans_info[0]
-                    for span in spans_info[1:]:
-                        # 字体名称变化
-                        if span['font_name'] != first_span['font_name']:
-                            has_format_change = True
-                        # 字体大小显著变化（超过 1pt）
-                        if abs(span['font_size'] - first_span['font_size']) > 1:
-                            has_format_change = True
-                        # 加粗状态变化
-                        if span['is_bold'] != first_span['is_bold']:
-                            has_format_change = True
-
-                if line_text and line_bbox:
-                    line_stripped = line_text.lstrip()  # 只去除左边空格
-
-                    # 扩展的图表标题格式匹配
-                    # 支持: Fig., Figure, fig., figure, FIG., FIG, Fig (不带点)
-                    fig_patterns = [
-                        r'^(Fig\.|Figure|fig\.|figure|FIG\.|FIG|Fig)\s*\d+',  # 基本格式
-                        r'^(Fig\.|Figure|fig\.|figure|FIG\.|FIG|Fig)\s+\d+',  # 多个空格
-                        r'^(Fig\.|Figure|fig\.|figure|FIG\.|FIG|Fig)\s*\d+[a-z]?',  # 带字母后缀 (Fig. 1a)
-                    ]
-
-                    # 检查是否匹配任一图表格式
-                    matches_pattern = any(re.match(pattern, line_stripped) for pattern in fig_patterns)
-
-                    if matches_pattern:
-                        # 放宽检测条件：加粗 OR 格式变化
-                        if is_bold or has_format_change:
-                            if not any(keyword in line_text for keyword in exclude_keywords):
-                                detection_method = []
-                                if is_bold:
-                                    detection_method.append("加粗")
-                                if has_format_change:
-                                    detection_method.append("格式变化")
-
-                                print(f"[DEBUG] 检测到图片标题 ({'+'.join(detection_method)}): {line_stripped[:80]}", file=sys.stderr)
-                                captions.append({
-                                    'bbox': line_bbox,
-                                    'text': line_stripped,
-                                    'y_top': line_bbox[1]
-                                })
-
-    captions.sort(key=lambda x: x['y_top'])
-    return captions
-
-
-def get_text_regions(page):
-    """获取所有文字区域"""
-    text_regions = []
-    blocks = page.get_text("dict")["blocks"]
-
-    for block in blocks:
-        if block.get("type") == 0:
-            bbox = block["bbox"]
-            text_regions.append([bbox[0], bbox[1], bbox[2], bbox[3]])
-
-    return text_regions
-
-
-def generate_text_stripped_image(page, dpi=300):
-    """生成去除文字的图片"""
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    pix = page.get_pixmap(matrix=mat, alpha=False)
-    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-    text_regions = get_text_regions(page)
-    page_rect = page.rect
-    scale_x = pix.width / page_rect.width
-    scale_y = pix.height / page_rect.height
-
-    for region in text_regions:
-        x0 = int(region[0] * scale_x)
-        y0 = int(region[1] * scale_y)
-        x1 = int(region[2] * scale_x)
-        y1 = int(region[3] * scale_y)
-        cv2.rectangle(img, (x0, y0), (x1, y1), (255, 255, 255), -1)
-
-    return img, scale_x, scale_y
-
-
-def detect_graphical_content(text_stripped_img, page_rect, scale_x, scale_y, min_size_pt=10):
-    """从去除文字的图片中检测图形轮廓"""
-    gray = cv2.cvtColor(text_stripped_img, cv2.COLOR_BGR2GRAY)
-
-    # 降低阈值使检测更敏感（从240改为235）
-    _, thresh = cv2.threshold(gray, 235, 255, cv2.THRESH_BINARY_INV)
-
-    kernel = np.ones((5, 5), np.uint8)
-
-    # 添加形态学闭运算，填补小孔洞和连接断开的轮廓
-    closing = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-
-    # 膨胀处理，使轮廓更完整
-    dilation = cv2.dilate(closing, kernel, iterations=1)
-
-    contours, _ = cv2.findContours(dilation, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    min_size_px = min_size_pt / scale_x
-    potential_boxes = []
-
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        if w > min_size_px and h > min_size_px:
-            pdf_bbox = [
-                x / scale_x,
-                y / scale_y,
-                (x + w) / scale_x,
-                (y + h) / scale_y
-            ]
-            potential_boxes.append(pdf_bbox)
-
-    return potential_boxes
-
-
-def expand_bbox_to_whitespace(merged_bbox, text_regions, page_rect):
-    """
-    将图形边界框向左右两侧扩展到空白区域
-    停止条件：遇到文字区域边界
-
-    Args:
-        merged_bbox: [x0, y0, x1, y1] 原始图形边界框
-        text_regions: 页面上所有文字区域的列表
-        page_rect: 页面矩形
-
-    Returns:
-        扩展后的边界框 [x0, y0, x1, y1]
-    """
-    x0, y0, x1, y1 = merged_bbox
-
-    # 找出与当前图形区域在垂直方向有重叠的所有文字区域
-    overlapping_text = []
-    for tr in text_regions:
-        # 检查垂直方向是否有重叠（文字的y范围与图形的y范围是否相交）
-        if not (tr[3] < y0 or tr[1] > y1):  # 有重叠
-            overlapping_text.append(tr)
-
-    # 向左探索：找到左边最近的文字区域右边界
-    left_boundary = 0  # 默认扩展到页面左边缘
-    for tr in overlapping_text:
-        if tr[2] < x0:  # 文字区域在图形左边
-            # 找到最近的（最右边的）文字区域
-            left_boundary = max(left_boundary, tr[2])
-
-    # 向右探索：找到右边最近的文字区域左边界
-    right_boundary = page_rect.width  # 默认扩展到页面右边缘
-    for tr in overlapping_text:
-        if tr[0] > x1:  # 文字区域在图形右边
-            # 找到最近的（最左边的）文字区域
-            right_boundary = min(right_boundary, tr[0])
-
-    # 添加更大的margin，在文字边界外留出空白（单位：PDF点）
-    TEXT_MARGIN = 15  # 文字区域外的空白距离
-    expanded_x0 = max(left_boundary + TEXT_MARGIN, 0)
-    expanded_x1 = min(right_boundary - TEXT_MARGIN, page_rect.width)
-
-    print(f"  [边界扩展] 原始: x=[{x0:.1f}, {x1:.1f}] → 扩展: x=[{expanded_x0:.1f}, {expanded_x1:.1f}]", file=sys.stderr)
-
-    return [expanded_x0, y0, expanded_x1, y1]
-
-
-def associate_figures_with_captions(graphical_boxes, captions, page_rect, text_regions):
-    """
-    基于标题位置关联图形框
-
-    关键：
-    - 上边界：OpenCV检测的最小y值（确保图形顶部完整）
-    - 下边界：标题顶部位置（图表和标题之间自然有间隔）
-    - 左右边界：扩展到空白区域，直到遇到文字
-    """
-    if not captions:
-        return []
-
-    results = []
-
-    for i, caption in enumerate(captions):
-        caption_y_top = caption['bbox'][1]
-
-        if i == 0:
-            search_top = 0
-        else:
-            prev_caption = captions[i-1]
-            search_top = prev_caption['bbox'][3]
-
-        search_bottom = caption_y_top
-
-        figures_in_region = []
-        for gbox in graphical_boxes:
-            box_center_y = (gbox[1] + gbox[3]) / 2
-            if search_top <= box_center_y <= search_bottom:
-                figures_in_region.append(gbox)
-
-        if figures_in_region:
-            x0_list = [box[0] for box in figures_in_region]
-            y0_list = [box[1] for box in figures_in_region]
-            x1_list = [box[2] for box in figures_in_region]
-
-            merged_bbox = [
-                min(x0_list),
-                min(y0_list),
-                max(x1_list),
-                caption_y_top  # 下边界直接用标题顶部
-            ]
-
-            # 向左右扩展边界到空白区域
-            expanded_bbox = expand_bbox_to_whitespace(merged_bbox, text_regions, page_rect)
-
-            results.append({
-                'caption': caption,
-                'figure_bbox': expanded_bbox,
-                'subfigures': figures_in_region
-            })
-
-    return results
-
-
-def extract_figure_number(caption_text):
+def extract_figure_number(caption_text: str) -> Optional[int]:
     """
     从caption文本中提取图号
 
-    支持格式：
+    支持格式:
     - "图1 | xxx" -> 1
     - "图2. xxx" -> 2
     - "Fig. 3" -> 3
     - "Figure 4" -> 4
 
     Returns:
-        int: 图号，如果提取失败返回None
+        图号，如果提取失败返回None
     """
-    import re
-
-    # 尝试匹配中文格式：图N
+    # 中文格式
     match = re.search(r'图\s*(\d+)', caption_text)
     if match:
         return int(match.group(1))
 
-    # 尝试匹配英文格式：Fig. N 或 Figure N
+    # 英文格式
     match = re.search(r'(?:Fig|Figure)\.?\s*(\d+)', caption_text, re.IGNORECASE)
     if match:
         return int(match.group(1))
@@ -326,266 +75,507 @@ def extract_figure_number(caption_text):
     return None
 
 
-def extract_first_page(pdf_path, output_dir, dpi=300):
+def encode_image_to_base64(image_path: Path) -> Tuple[str, str]:
     """
-    提取PDF第一页作为完整图片
-
-    Args:
-        pdf_path: PDF文件路径
-        output_dir: 图片输出目录
-        dpi: 输出图片分辨率
+    将图片编码为 base64
 
     Returns:
-        第一页图片信息字典
+        (base64_string, mime_type)
     """
-    doc = fitz.open(pdf_path)
-    if len(doc) == 0:
-        doc.close()
+    ext = image_path.suffix.lower()
+    mime_map = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.bmp': 'image/bmp'
+    }
+    mime_type = mime_map.get(ext, 'image/png')
+
+    with open(image_path, 'rb') as f:
+        base64_data = base64.b64encode(f.read()).decode('utf-8')
+
+    return base64_data, mime_type
+
+
+def extract_first_page_simple(pdf_path: str, output_dir: str, dpi: int = 300) -> Optional[Dict]:
+    """
+    使用 PyMuPDF 快速提取第一页
+
+    Returns:
+        第一页信息字典或None
+    """
+    if not fitz:
         return None
 
-    page = doc[0]
-    mat = fitz.Matrix(dpi / 72, dpi / 72)
-    pix = page.get_pixmap(matrix=mat, alpha=False)
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return None
 
-    # 转换为 OpenCV 格式
-    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    try:
+        doc = fitz.open(pdf_path)
+        if len(doc) == 0:
+            doc.close()
+            return None
 
-    # 保存第一页
-    output_filename = "page_1.png"
-    output_path = os.path.join(output_dir, output_filename)
-    cv2.imwrite(output_path, img)
-
-    # 读取并转换为 base64
-    import base64
-    with open(output_path, 'rb') as img_file:
-        img_data = img_file.read()
-        base64_data = base64.b64encode(img_data).decode('utf-8')
-
-    doc.close()
-
-    print(f"[INFO] 已提取第一页: {output_filename}, base64: {len(base64_data)} chars", file=sys.stderr)
-
-    return {
-        'page': 1,
-        'type': 'first_page',
-        'path': output_path,
-        'base64_data': base64_data,
-        'filename': output_filename,
-        'mime_type': 'image/png'
-    }
-
-
-def extract_images(pdf_path, output_dir, dpi=300):
-    """
-    从PDF提取图表（使用混合策略）+ 第一页完整截图
-
-    Args:
-        pdf_path: PDF文件路径
-        output_dir: 图片输出目录
-        dpi: 输出图片分辨率
-
-    Returns:
-        提取结果字典，包含 figures 和 first_page
-    """
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF文件不存在: {pdf_path}")
-
-    os.makedirs(output_dir, exist_ok=True)
-
-    doc = fitz.open(pdf_path)
-    all_results = []
-
-    # 提取第一页
-    first_page_info = extract_first_page(pdf_path, output_dir, dpi)
-
-    print(f"[INFO] PDF共有 {len(doc)} 页", file=sys.stderr)
-
-    for page_num in range(len(doc)):
-        page = doc[page_num]
-        print(f"[INFO] 处理第 {page_num + 1} 页...", file=sys.stderr)
-
-        # 1. 检测标题
-        captions = detect_figure_captions(page)
-        print(f"  检测到 {len(captions)} 个图表标题", file=sys.stderr)
-
-        if not captions:
-            continue
-
-        # 2. 生成无文字图片
-        text_stripped_img, scale_x, scale_y = generate_text_stripped_image(page, dpi)
-
-        # 2.5. 获取文字区域（用于边界扩展）
-        text_regions = get_text_regions(page)
-
-        # 3. 检测图形内容
-        page_rect = page.rect
-        graphical_boxes = detect_graphical_content(
-            text_stripped_img, page_rect, scale_x, scale_y, min_size_pt=10
-        )
-        print(f"  检测到 {len(graphical_boxes)} 个图形框", file=sys.stderr)
-
-        if not graphical_boxes:
-            continue
-
-        # 4. 关联图形与标题
-        figure_caption_pairs = associate_figures_with_captions(
-            graphical_boxes, captions, page_rect, text_regions
-        )
-        print(f"  成功关联 {len(figure_caption_pairs)} 个图表", file=sys.stderr)
-
-        # 5. 提取并保存
+        page = doc[0]
         mat = fitz.Matrix(dpi / 72, dpi / 72)
         pix = page.get_pixmap(matrix=mat, alpha=False)
-        full_img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-            pix.height, pix.width, 3
-        )
-        full_img = cv2.cvtColor(full_img, cv2.COLOR_RGB2BGR)
 
-        for idx, pair in enumerate(figure_caption_pairs):
-            figure_bbox = pair['figure_bbox']
-            caption_text = pair['caption']['text']
+        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-            # 从caption中提取真实图号
-            fig_num = extract_figure_number(caption_text)
-            if fig_num is None:
-                # 如果无法提取图号，使用页内索引作为后备
-                fig_num = idx + 1
-                print(f"  警告: 无法从caption提取图号，使用索引 {fig_num}: {caption_text}", file=sys.stderr)
+        output_path = Path(output_dir) / "page_1.png"
+        cv2.imwrite(str(output_path), img)
 
-            x0_px = int(figure_bbox[0] * scale_x)
-            y0_px = int(figure_bbox[1] * scale_y)
-            x1_px = int(figure_bbox[2] * scale_x)
-            y1_px = int(figure_bbox[3] * scale_y)
+        doc.close()
 
-            x0_px = max(0, x0_px)
-            y0_px = max(0, y0_px)
-            x1_px = min(full_img.shape[1], x1_px)
-            y1_px = min(full_img.shape[0], y1_px)
+        base64_data, mime_type = encode_image_to_base64(output_path)
 
-            cropped = full_img[y0_px:y1_px, x0_px:x1_px]
+        return {
+            'page': 1,
+            'type': 'first_page',
+            'path': str(output_path),
+            'base64_data': base64_data,
+            'filename': 'page_1.png',
+            'mime_type': mime_type
+        }
+    except Exception as e:
+        print(f"[WARN] 提取第一页失败: {e}", file=sys.stderr)
+        return None
 
-            # 使用真实图号命名文件
-            output_filename = f"fig_{fig_num}.png"
-            output_path = os.path.join(output_dir, output_filename)
-            cv2.imwrite(output_path, cropped)
 
-            # 读取图片并转换为 base64
-            import base64
-            with open(output_path, 'rb') as img_file:
-                img_data = img_file.read()
-                base64_data = base64.b64encode(img_data).decode('utf-8')
+class MinerUImageExtractor:
+    """
+    使用 MinerU 的图像提取器
+    """
 
-            print(f"  保存: {output_filename} (图{fig_num}), base64: {len(base64_data)} chars", file=sys.stderr)
+    def __init__(self, backend: str = 'pipeline', lang: str = 'en', device: str = 'cpu'):
+        self.backend = backend
+        self.lang = lang
+        self.device = device
+        self.temp_dirs = []
 
-            all_results.append({
-                'page': page_num + 1,
-                'figure_index': fig_num,  # 使用真实图号
-                'caption': caption_text,
-                'bbox': figure_bbox,
-                'path': output_path,
-                'base64_data': base64_data,  # 添加 base64 数据
+    def __del__(self):
+        """清理临时目录"""
+        for temp_dir in self.temp_dirs:
+            try:
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir)
+            except Exception as e:
+                print(f"[WARN] 清理临时目录失败: {e}", file=sys.stderr)
+
+    def parse_pdf_with_mineru(self, pdf_path: str) -> Tuple[Path, str]:
+        """
+        使用 MinerU 解析 PDF
+
+        Returns:
+            (markdown_dir, markdown_content)
+        """
+        from mineru.cli.client import main as mineru_main
+        import sys as _sys
+
+        # 创建临时输出目录
+        output_dir = Path(tempfile.mkdtemp(prefix='mineru_'))
+        self.temp_dirs.append(output_dir)
+
+        print(f"[INFO] MinerU 解析中: {pdf_path}", file=sys.stderr)
+        print(f"[INFO] 输出目录: {output_dir}", file=sys.stderr)
+
+        # 构建命令行参数
+        original_argv = _sys.argv.copy()
+        try:
+            _sys.argv = [
+                'mineru',
+                '-p', pdf_path,
+                '-o', str(output_dir),
+                '-b', self.backend,
+                '-l', self.lang,
+                '-d', self.device,
+                '-f', 'True' if MINERU_PARSE_FORMULA else 'False',
+                '-t', 'True' if MINERU_PARSE_TABLE else 'False'
+            ]
+
+            # 调用 MinerU
+            try:
+                mineru_main()
+            except SystemExit as e:
+                # mineru_main 是 CLI 入口，正常结束会触发 SystemExit(0)
+                if e.code not in (0, None):
+                    print(f"[ERROR] MinerU 进程非零退出: {e}", file=sys.stderr)
+                    raise
+                else:
+                    print(f"[INFO] MinerU 正常退出 (SystemExit {e.code})，继续处理输出", file=sys.stderr)
+
+        finally:
+            _sys.argv = original_argv
+
+        # 查找生成的 markdown 文件
+        print(f"[INFO] 查找 markdown 文件...", file=sys.stderr)
+        md_files = list(output_dir.rglob('*.md'))
+        print(f"[INFO] 找到 {len(md_files)} 个 markdown 文件", file=sys.stderr)
+
+        if not md_files:
+            raise RuntimeError("MinerU 未生成 markdown 文件")
+
+        # 选择主 markdown 文件
+        pdf_stem = Path(pdf_path).stem
+        print(f"[INFO] PDF stem: {pdf_stem}", file=sys.stderr)
+
+        md_file = next((f for f in md_files if f.stem.lower() == pdf_stem.lower()), md_files[0])
+        print(f"[INFO] 选择的 markdown 文件: {md_file}", file=sys.stderr)
+        print(f"[INFO] 文件存在: {md_file.exists()}, 大小: {md_file.stat().st_size if md_file.exists() else 0} 字节", file=sys.stderr)
+
+        try:
+            markdown_content = md_file.read_text(encoding='utf-8', errors='ignore')
+            print(f"[INFO] MinerU 解析完成，markdown 长度: {len(markdown_content)}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] 读取 markdown 文件失败: {e}", file=sys.stderr)
+            raise
+
+        # markdown 文件所在目录 (通常为 .../<pdf_stem>/auto/)
+        markdown_dir = md_file.parent
+
+        return markdown_dir, markdown_content
+
+    def extract_images_from_markdown(
+        self,
+        markdown_content: str,
+        markdown_dir: Path,
+        output_dir: Path
+    ) -> List[Dict]:
+        """
+        从 MinerU 生成的 markdown 中提取图片信息
+
+        Args:
+            markdown_content: markdown 文本内容
+            markdown_dir: markdown 文件所在目录
+            output_dir: 图片输出目录
+
+        Returns:
+            图片信息列表
+        """
+        figures = []
+        seen_paths = set()
+        auto_index = 1
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 分行处理，因为图注在图片引用的下一行
+        lines = markdown_content.split('\n')
+
+        for i, line in enumerate(lines):
+            match = IMAGE_MARKDOWN_PATTERN.search(line)
+            if not match:
+                continue
+
+            alt_text = match.group('alt').strip()
+            rel_path = match.group('path').strip()
+
+            # 跳过 URL
+            if rel_path.startswith('http'):
+                continue
+
+            # 构建图片绝对路径
+            image_path = (markdown_dir / rel_path).resolve()
+
+            # 检查文件是否存在
+            if not image_path.exists() or not image_path.is_file():
+                print(f"[WARN] 图片不存在: {image_path}", file=sys.stderr)
+                continue
+
+            # 去重
+            path_key = str(image_path)
+            if path_key in seen_paths:
+                continue
+            seen_paths.add(path_key)
+
+            # 优先使用下一行的题注（MinerU 格式）
+            caption = None
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and (next_line.startswith('Fig.') or next_line.startswith('图')):
+                    caption = next_line.rstrip()
+
+            # 如果下一行没有题注，再回退到 alt_text / 路径中包含 fig 标记
+            if caption is None and FIG_REGEX.search(alt_text):
+                caption = alt_text
+            if caption is None and FIG_REGEX.search(rel_path):
+                caption = alt_text or rel_path
+
+            # 只有有明确题注的图才保留
+            if not caption:
+                continue
+
+            # 检查是否包含图表标识
+            is_figure = bool(FIG_REGEX.search(caption) or FIG_REGEX.search(rel_path))
+            if not is_figure:
+                continue
+
+            # 提取图号
+            figure_num = extract_figure_number(caption)
+            if figure_num is None:
+                figure_num = auto_index
+            auto_index += 1
+
+            # 复制图片到输出目录
+            output_filename = f"fig_{figure_num}{image_path.suffix}"
+            output_path = output_dir / output_filename
+
+            try:
+                shutil.copy2(image_path, output_path)
+            except Exception as e:
+                print(f"[WARN] 复制图片失败 {image_path}: {e}", file=sys.stderr)
+                continue
+
+            # 编码为 base64
+            try:
+                base64_data, mime_type = encode_image_to_base64(output_path)
+            except Exception as e:
+                print(f"[WARN] 编码图片失败 {output_path}: {e}", file=sys.stderr)
+                continue
+
+            # 从 markdown 中推断页码 (可选)
+            page_num = self._infer_page_from_path(rel_path)
+
+            figure_info = {
+                'page': page_num,
+                'figure_index': figure_num,
+                'caption': caption,
+                'bbox': None,  # MinerU markdown 不提供精确 bbox
+                'path': str(output_path),
+                'base64_data': base64_data,
                 'filename': output_filename,
-                'mime_type': 'image/png'
-            })
+                'mime_type': mime_type,
+                'source': 'mineru',
+                'is_figure': is_figure
+            }
 
-    doc.close()
-    print(f"[INFO] 完成！共提取 {len(all_results)} 个图表", file=sys.stderr)
+            figures.append(figure_info)
 
-    # 按图号排序，确保返回的顺序是：图1, 图2, 图3, ...
-    # 这样imagePaths[0]对应图1，imagePaths[1]对应图2
-    all_results.sort(key=lambda x: x['figure_index'])
-    fig_nums = [f"图{r['figure_index']}" for r in all_results]
-    print(f"[INFO] 已按图号排序: {fig_nums}", file=sys.stderr)
+            print(f"[INFO] 提取图片 {figure_num}: {caption[:80]}", file=sys.stderr)
 
-    return {
-        'figures': all_results,
-        'first_page': first_page_info
-    }
+        # 按图号排序
+        figures.sort(key=lambda x: x['figure_index'])
+
+        return figures
+
+    def _infer_page_from_path(self, rel_path: str) -> Optional[int]:
+        """从路径推断页码"""
+        match = re.search(r'page[_-]?(\d+)', rel_path, re.IGNORECASE)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                pass
+        return None
+
+    def extract_images(self, pdf_path: str, output_dir: str) -> Dict:
+        """
+        主提取函数
+
+        Args:
+            pdf_path: PDF 文件路径
+            output_dir: 输出目录
+
+        Returns:
+            {
+                'figures': [...],
+                'first_page': {...},
+                'metadata': {...}
+            }
+        """
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF文件不存在: {pdf_path}")
+
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # 1. 先提取第一页 (使用快速方法)
+        first_page = extract_first_page_simple(pdf_path, output_dir, dpi=MINERU_DPI)
+
+        # 2. 使用 MinerU 解析 PDF
+        try:
+            markdown_dir, markdown_content = self.parse_pdf_with_mineru(pdf_path)
+        except Exception as e:
+            print(f"[ERROR] MinerU 解析失败: {e}", file=sys.stderr)
+            raise
+
+        # 3. 从 markdown 中提取图片
+        try:
+            print(f"[INFO] 开始从 markdown 提取图片", file=sys.stderr)
+            print(f"[INFO] Markdown 长度: {len(markdown_content)} 字符", file=sys.stderr)
+            print(f"[INFO] MinerU 输出目录: {markdown_dir}", file=sys.stderr)
+            print(f"[INFO] 目标输出目录: {output_path}", file=sys.stderr)
+
+            figures = self.extract_images_from_markdown(
+                markdown_content,
+                markdown_dir,
+                output_path
+            )
+
+            print(f"[INFO] 共提取 {len(figures)} 张图片", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] 提取图片失败: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            # 返回空列表而不是崩溃
+            figures = []
+
+        return {
+            'figures': figures,
+            'first_page': first_page,
+            'metadata': {
+                'total_figures': len(figures),
+                'backend': self.backend,
+                'lang': self.lang,
+                'device': self.device
+            }
+        }
 
 
 class ImageExtractHandler(BaseHTTPRequestHandler):
+    """HTTP 请求处理器"""
+
     def do_POST(self):
         if self.path != '/extract':
-            self.send_response(404)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+            self.send_error_response(404, "Endpoint not found")
             return
 
-        # 读取请求体，尝试多种编码方式
-        content_length = int(self.headers['Content-Length'])
-        body_bytes = self.rfile.read(content_length)
-
-        # 尝试UTF-8解码，如果失败则尝试其他编码
         try:
-            body = body_bytes.decode('utf-8')
-        except UnicodeDecodeError:
+            # 读取请求
+            content_length = int(self.headers.get('Content-Length', 0))
+            body_bytes = self.rfile.read(content_length)
+
+            # 解码
             try:
-                body = body_bytes.decode('gbk')
+                body = body_bytes.decode('utf-8')
             except UnicodeDecodeError:
-                body = body_bytes.decode('latin-1')
+                body = body_bytes.decode('gbk', errors='ignore')
 
-        try:
-            data = json.loads(body)
+            # 解析 JSON
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError as e:
+                self.send_error_response(400, f"Invalid JSON: {e}")
+                return
+
             pdf_path = data.get('pdfPath')
             output_dir = data.get('outputDir', './temp')
 
             if not pdf_path:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": "Missing pdfPath"}).encode())
+                self.send_error_response(400, "Missing pdfPath parameter")
                 return
 
             print(f"[{self.log_date_time_string()}] 收到提取请求: {pdf_path}", file=sys.stderr)
 
-            # 提取图表和第一页
-            result = extract_images(pdf_path, output_dir)
+            # 执行提取
+            if MINERU_AVAILABLE:
+                extractor = MinerUImageExtractor(
+                    backend=MINERU_BACKEND,
+                    lang=MINERU_LANG,
+                    device=MINERU_DEVICE
+                )
+                result = extractor.extract_images(pdf_path, output_dir)
+            else:
+                # 降级到基础模式
+                first_page = extract_first_page_simple(pdf_path, output_dir)
+                result = {
+                    'figures': [],
+                    'first_page': first_page,
+                    'metadata': {'error': 'MinerU not available'}
+                }
 
-            # 返回结果
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            response = {
-                "success": True,
-                "figures": result['figures'],
-                "first_page": result['first_page'],
-                "count": len(result['figures'])
-            }
-            self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+            # 返回成功响应
+            self.send_success_response(result)
 
-            print(f"[{self.log_date_time_string()}] 提取成功，返回 {len(result['figures'])} 个图表 + 第一页", file=sys.stderr)
+            print(f"[{self.log_date_time_string()}] 提取成功: {len(result['figures'])} 张图片", file=sys.stderr)
 
+        except FileNotFoundError as e:
+            self.send_error_response(404, str(e))
         except Exception as e:
             print(f"[{self.log_date_time_string()}] 提取失败: {e}", file=sys.stderr)
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}, ensure_ascii=False).encode('utf-8'))
+            import traceback
+            traceback.print_exc()
+            self.send_error_response(500, str(e))
+
+    def send_success_response(self, result: Dict):
+        """发送成功响应"""
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.end_headers()
+
+        response = {
+            'success': True,
+            'figures': result['figures'],
+            'first_page': result['first_page'],
+            'count': len(result['figures']),
+            'metadata': result.get('metadata', {})
+        }
+
+        self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+
+    def send_error_response(self, code: int, message: str):
+        """发送错误响应"""
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.end_headers()
+
+        response = {
+            'success': False,
+            'error': message
+        }
+
+        self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
 
     def log_message(self, format, *args):
-        # 自定义日志格式
+        """自定义日志"""
         sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
 
 
 def main():
-    port = 3457
+    """启动 HTTP 服务"""
+    port = int(os.environ.get('PORT', '3457'))
+
+    print("=" * 60)
+    print("PDF 图片提取服务 - MinerU 优化版")
+    print("=" * 60)
+    print(f"监听端口: {port}")
+    print(f"API 地址: POST http://localhost:{port}/extract")
+    print()
+    print("MinerU 配置:")
+    print(f"  - 可用状态: {'[YES] 已安装' if MINERU_AVAILABLE else '[NO] 未安装'}")
+    print(f"  - Backend: {MINERU_BACKEND}")
+    print(f"  - Language: {MINERU_LANG}")
+    print(f"  - Device: {MINERU_DEVICE}")
+    print(f"  - DPI: {MINERU_DPI}")
+    print(f"  - 公式解析: {'[YES]' if MINERU_PARSE_FORMULA else '[NO]'}")
+    print(f"  - 表格解析: {'[YES]' if MINERU_PARSE_TABLE else '[NO]'}")
+    print()
+    print("请求格式:")
+    print('  { "pdfPath": "...", "outputDir": "..." }')
+    print()
+    print("响应格式:")
+    print('  {')
+    print('    "success": true,')
+    print('    "figures": [...],')
+    print('    "first_page": {...},')
+    print('    "count": N')
+    print('  }')
+    print()
+    print("按 Ctrl+C 停止服务")
+    print("=" * 60)
+
     server = HTTPServer(('0.0.0.0', port), ImageExtractHandler)
-    print(f"[INFO] Image extraction service started")
-    print(f"[INFO] Listening on port: {port}")
-    print(f"[INFO] API endpoint: POST http://localhost:{port}/extract")
-    print(f"[INFO] Request format: {{ \"pdfPath\": \"...\", \"outputDir\": \"...\" }}")
-    print(f"[INFO] Response format: {{ \"success\": true, \"imagePaths\": [...], \"count\": N }}")
-    print('')
-    print('[INFO] Press Ctrl+C to stop')
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print('\n[INFO] Shutting down...')
+        print('\n[INFO] 正在关闭服务...')
         server.shutdown()
-        print('[INFO] Service stopped')
+        print('[INFO] 服务已停止')
 
 
 if __name__ == "__main__":

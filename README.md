@@ -56,14 +56,14 @@ set HF_ENDPOINT=https://hf-mirror.com
 set MINERU_DEVICE=cuda
 set MINERU_BACKEND=pipeline
 set MINERU_LANG=en
-set PORT=5678
+set PORT=3457  # MinerU 服务端口，避免与 n8n 的 5678 冲突
 
 # 启动服务
 cd scripts
-python image_extract_service_mineru.py
+python image_extract_service.py
 
 # 健康测试
-curl -X POST http://localhost:5678/extract ^
+curl -X POST http://localhost:3457/extract ^
   -H "Content-Type: application/json" ^
   -d "{\"pdfPath\": \"e:/code/n8n_workflow/pdfs/demo.pdf\", \"outputDir\": \"e:/code/n8n_workflow/output\"}"
 ```

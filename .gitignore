@@ -89,3 +89,8 @@ scripts/__pycache__/image_extract_service_mineru.cpython-312.pyc
 scripts/__pycache__/image_extract_service.cpython-310.pyc
 scripts/__pycache__/image_extract_service.cpython-311.pyc
 scripts/__pycache__/image_extract_service.cpython-312.pyc
+test_output/fig_1.jpg
+test_output/fig_2.jpg
+test_output/fig_3.jpg
+test_output/fig_4.jpg
+test_output/page_1.png
