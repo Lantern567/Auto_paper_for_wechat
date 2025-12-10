@@ -72,6 +72,7 @@ curl -X POST http://localhost:3457/extract ^
 - 必须克隆 MinerU 仓库到 `./MinerU`，因为 `requirements.txt` 通过 `-e ./MinerU[core]` 安装核心组件。
 - 如需 CPU 模式，将 `MINERU_DEVICE=cpu`；VLM 模式可设 `MINERU_BACKEND=vlm-transformers`（更慢但更强）。
 - 首次运行会自动下载模型，国内建议保留 `HF_ENDPOINT=https://hf-mirror.com`。
+- **处理时间说明**：MinerU 处理一个 PDF 通常需要 3-5 分钟（包括模型初始化、OCR、公式识别等），n8n 工作流已配置 10 分钟超时，请耐心等待。
 
 ### 安装 n8n 社区节点
 
@@ -252,7 +253,7 @@ docker run -d --restart unless-stopped \
    - 点击右上角的 **"Execute workflow"** 按钮
    - 工作流将自动执行以下步骤：
      1. 读取 `pdfs` 文件夹中的所有 PDF
-     2. 提取 PDF 文本内容和图片
+     2. 提取 PDF 文本内容和图片（**MinerU 处理约 3-5 分钟，请耐心等待**）
      3. 使用 AI 生成推文内容（Markdown 格式）
      4. 将 Markdown 转换为微信富文本格式
      5. 上传图片到微信公众号素材库
@@ -262,6 +263,7 @@ docker run -d --restart unless-stopped \
    - 每个节点执行后会显示绿色对勾
    - 点击节点可查看输入输出数据
    - 如果出现红色错误标记，点击查看错误详情
+   - **注意**："提取PDF图片"节点可能需要 3-5 分钟，期间节点会显示为执行中状态（旋转动画），这是正常现象
 
 ### 输出：查看结果
 
@@ -594,15 +596,34 @@ taskkill /PID <PID> /F         # 结束进程
 lsof -ti:3456 | xargs kill -9
 ```
 
-### Q: Markdown 转换失败？
+### Q: PDF 图片提取超时或连接断开？
 
-检查 `cookies.json` 是否正确配置，token 是否过期。
+**症状**：n8n 日志显示 `ConnectionResetError: [WinError 10054]` 或请求超时
+
+**原因**：MinerU 处理 PDF 需要 3-5 分钟，默认的 1 分钟超时不够
+
+**解决方法**：
+1. 工作流已配置 10 分钟超时，确保使用最新版本的工作流
+2. 如果仍然超时，可以在 n8n 中手动检查"提取PDF图片"节点：
+   - 点击节点 → Options → Timeout
+   - 确认值为 `600000`（10分钟）
+3. 对于特别大的 PDF，可以适当增加超时时间
+
+**监控处理进度**：
+- 查看 Python 服务的控制台输出
+- 正常情况下会显示：模型初始化 → 布局预测 → OCR → 公式识别
+- 完整处理大约需要 3-5 分钟
 
 ### Q: PDF 图片提取失败？
 
-确保已安装 PyMuPDF：
+确保已安装所需依赖：
 ```bash
-pip install PyMuPDF
+pip install PyMuPDF opencv-python numpy
+```
+
+并检查 MinerU 是否正确安装：
+```bash
+python -c "from mineru.cli.client import main; print('MinerU installed')"
 ```
 
 ### Q: n8n 导入命令找不到？
@@ -623,6 +644,7 @@ MIT License
 ## 🙏 致谢
 
 - [n8n](https://n8n.io/) - 开源工作流自动化平台
+- [MinerU](https://github.com/opendatalab/MinerU) - 强大的 PDF 图片提取和识别工具，提供高精度的 OCR 和公式识别能力
 - [mdnice](https://mdnice.com/) - Markdown 微信排版工具
 - [微信公众平台](https://mp.weixin.qq.com/) - 微信公众号开放接口
 - [n8n-nodes-wechat-offiaccount](https://github.com/other-blowsnow/n8n-nodes-wechat-offiaccount) - 微信公众号n8n接口
