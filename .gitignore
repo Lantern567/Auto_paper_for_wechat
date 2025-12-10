@@ -84,3 +84,8 @@ PDFigCapX_study/
 install-claude-vscode.ps1
 scripts/md-to-wechat/cookies.json
 scripts/md-to-wechat/cookies.json
+claude.md
+scripts/__pycache__/image_extract_service_mineru.cpython-312.pyc
+scripts/__pycache__/image_extract_service.cpython-310.pyc
+scripts/__pycache__/image_extract_service.cpython-311.pyc
+scripts/__pycache__/image_extract_service.cpython-312.pyc

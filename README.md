@@ -31,12 +31,47 @@ docker pull n8nio/n8n
 # 2. 安装 Markdown 转换服务依赖
 cd scripts/md-to-wechat
 npm install
-npm run build  # 编译 TypeScript 代码生成 dist 文件夹
+npm run build
 npx playwright install chromium
 
-# 3. 安装 PDF 提取服务依赖
-pip install PyMuPDF
+# 3. 安装 GPU 版 MinerU 依赖（Python 3.10+，CUDA 12.1）
+cd e:/code/n8n_workflow
+# 克隆 MinerU 源码（必须存在于 ./MinerU 目录，因 requirements.txt 使用 -e ./MinerU[core]）
+git clone https://github.com/opendatalab/MinerU.git
+python -m venv .venv
+.venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
+
+### 部署 MinerU 图片提取服务（GPU 模式）
+
+```bash
+# 进入项目并激活环境
+cd e:/code/n8n_workflow
+.venv\Scripts\activate
+
+# 环境变量（按需调整）
+set HF_ENDPOINT=https://hf-mirror.com
+set MINERU_DEVICE=cuda
+set MINERU_BACKEND=pipeline
+set MINERU_LANG=en
+set PORT=5678
+
+# 启动服务
+cd scripts
+python image_extract_service_mineru.py
+
+# 健康测试
+curl -X POST http://localhost:5678/extract ^
+  -H "Content-Type: application/json" ^
+  -d "{\"pdfPath\": \"e:/code/n8n_workflow/pdfs/demo.pdf\", \"outputDir\": \"e:/code/n8n_workflow/output\"}"
+```
+
+说明：
+- 必须克隆 MinerU 仓库到 `./MinerU`，因为 `requirements.txt` 通过 `-e ./MinerU[core]` 安装核心组件。
+- 如需 CPU 模式，将 `MINERU_DEVICE=cpu`；VLM 模式可设 `MINERU_BACKEND=vlm-transformers`（更慢但更强）。
+- 首次运行会自动下载模型，国内建议保留 `HF_ENDPOINT=https://hf-mirror.com`。
 
 ### 安装 n8n 社区节点
 
