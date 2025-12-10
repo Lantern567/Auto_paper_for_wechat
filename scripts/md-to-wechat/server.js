@@ -46,7 +46,10 @@ const server = http.createServer(async (req, res) => {
       }
       const child = spawn('node', [scriptPath, ...args], {
         cwd: __dirname,
-        env: process.env
+        env: {
+          ...process.env,
+          HEADLESS: process.env.HEADLESS || 'true' // 默认无头模式，可通过环境变量覆盖
+        }
       });
 
       let stdout = '';
