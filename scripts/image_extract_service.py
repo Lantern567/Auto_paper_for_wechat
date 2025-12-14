@@ -36,7 +36,7 @@ except ImportError:
 # 配置项
 MINERU_BACKEND = (os.environ.get('MINERU_BACKEND') or 'pipeline').strip()  # pipeline | vlm-transformers
 MINERU_LANG = (os.environ.get('MINERU_LANG') or 'en').strip()  # ch | en
-MINERU_DEVICE = (os.environ.get('MINERU_DEVICE') or 'cpu').strip()  # cpu | cuda | mps
+MINERU_DEVICE = (os.environ.get('MINERU_DEVICE') or 'cuda').strip()  # cpu | cuda | mps
 MINERU_DPI = int(os.environ.get('MINERU_DPI', '300'))
 MINERU_PARSE_FORMULA = os.environ.get('MINERU_PARSE_FORMULA', '1') == '1'
 MINERU_PARSE_TABLE = os.environ.get('MINERU_PARSE_TABLE', '1') == '1'
@@ -266,6 +266,12 @@ class MinerUImageExtractor:
         # 分行处理，因为图注在图片引用的下一行
         lines = markdown_content.split('\n')
 
+        # 调试：打印包含图片引用的行
+        print(f"[DEBUG] 总行数: {len(lines)}", file=sys.stderr)
+        for idx, l in enumerate(lines[:50]):
+            if '![' in l or 'images/' in l:
+                print(f"[DEBUG] Line {idx}: {repr(l[:120])}", file=sys.stderr)
+
         for i, line in enumerate(lines):
             match = IMAGE_MARKDOWN_PATTERN.search(line)
             if not match:
@@ -273,13 +279,16 @@ class MinerUImageExtractor:
 
             alt_text = match.group('alt').strip()
             rel_path = match.group('path').strip()
+            print(f"[DEBUG] 找到图片引用: alt={repr(alt_text)}, path={repr(rel_path)}", file=sys.stderr)
 
             # 跳过 URL
             if rel_path.startswith('http'):
+                print(f"[DEBUG] 跳过 URL: {rel_path}", file=sys.stderr)
                 continue
 
             # 构建图片绝对路径
             image_path = (markdown_dir / rel_path).resolve()
+            print(f"[DEBUG] 图片路径: {image_path}, 存在: {image_path.exists()}", file=sys.stderr)
 
             # 检查文件是否存在
             if not image_path.exists() or not image_path.is_file():
@@ -289,30 +298,91 @@ class MinerUImageExtractor:
             # 去重
             path_key = str(image_path)
             if path_key in seen_paths:
+                print(f"[DEBUG] 跳过重复: {path_key}", file=sys.stderr)
                 continue
             seen_paths.add(path_key)
 
-            # 优先使用下一行的题注（MinerU 格式）
+            # 扩大搜索范围：在图片前后多行寻找题注
             caption = None
-            if i + 1 < len(lines):
-                next_line = lines[i + 1].strip()
-                if next_line and (next_line.startswith('Fig.') or next_line.startswith('图')):
-                    caption = next_line.rstrip()
+            caption_source = None
 
-            # 如果下一行没有题注，再回退到 alt_text / 路径中包含 fig 标记
+            # 搜索顺序：下一行 > 前一行 > 下下行 > 前前行 > 更远
+            search_offsets = [1, -1, 2, -2, 3, -3]
+            for offset in search_offsets:
+                check_idx = i + offset
+                if 0 <= check_idx < len(lines):
+                    check_line = lines[check_idx].strip()
+                    if check_line and (
+                        check_line.startswith('Figure ') or
+                        check_line.startswith('Fig.') or
+                        check_line.startswith('Fig ') or
+                        check_line.startswith('图')
+                    ):
+                        caption = check_line.rstrip()
+                        caption_source = f"offset {offset:+d}"
+                        print(f"[DEBUG] 从第 {check_idx} 行 (offset={offset:+d}) 获取 caption: {caption[:80]}", file=sys.stderr)
+                        break
+
+            # 如果周围没找到标准格式的题注，检查下一行是否像题注描述（可能 Figure X 前缀丢失）
+            if caption is None and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                print(f"[DEBUG] 下一行（无 Figure 前缀）: {repr(next_line[:100]) if len(next_line) > 100 else repr(next_line)}", file=sys.stderr)
+
+                # 检查下一行是否是描述性文字（可能是丢失了 Figure X 前缀的标注）
+                # 特征：非空、不是纯空行、不是正文段落开头
+                if next_line and len(next_line) > 20:
+                    # 在 markdown 全文中搜索是否有 "Figure N" 引用指向这个位置
+                    # 如果前面已提取了 Figure 1-4，这可能是 Figure 5
+                    expected_fig_num = auto_index
+                    fig_ref_pattern = re.compile(rf'Figure\s+{expected_fig_num}[A-Za-z]?\b', re.IGNORECASE)
+                    # 在图片后的文本中搜索对这个图的引用
+                    remaining_text = '\n'.join(lines[i+1:min(i+50, len(lines))])
+                    if fig_ref_pattern.search(remaining_text):
+                        caption = f"Figure {expected_fig_num}. {next_line[:100]}"
+                        caption_source = "inferred from context"
+                        print(f"[DEBUG] 推断标注（基于 Figure {expected_fig_num} 引用）: {caption[:80]}", file=sys.stderr)
+
+            # 如果还是没有，回退到 alt_text / 路径中包含 fig 标记
             if caption is None and FIG_REGEX.search(alt_text):
                 caption = alt_text
+                caption_source = "alt_text"
+                print(f"[DEBUG] 从 alt_text 获取 caption", file=sys.stderr)
             if caption is None and FIG_REGEX.search(rel_path):
                 caption = alt_text or rel_path
+                caption_source = "rel_path"
+                print(f"[DEBUG] 从 rel_path 获取 caption", file=sys.stderr)
+
+            # 最后的回退：如果这是正文中间的图片，基于序号生成 caption
+            if caption is None:
+                # 检查是否在参考文献部分（通常图片不应该在这里）
+                context_before = '\n'.join(lines[max(0, i-10):i])
+                if 'References' in context_before or 'REFERENCES' in context_before:
+                    print(f"[DEBUG] 跳过：图片在参考文献部分", file=sys.stderr)
+                    continue
+
+                # 如果前面已经提取了图片，这可能是下一张
+                if figures:
+                    last_fig_num = figures[-1]['figure_index']
+                    expected_num = last_fig_num + 1
+                    # 检查是否有 Figure N 的引用
+                    search_range = '\n'.join(lines[max(0, i-20):min(len(lines), i+30)])
+                    if re.search(rf'Figure\s+{expected_num}\b', search_range, re.IGNORECASE):
+                        caption = f"Figure {expected_num}. (caption not found in markdown)"
+                        caption_source = "sequential inference"
+                        print(f"[DEBUG] 序号推断标注: {caption}", file=sys.stderr)
 
             # 只有有明确题注的图才保留
             if not caption:
+                print(f"[DEBUG] 跳过：没有 caption", file=sys.stderr)
                 continue
 
             # 检查是否包含图表标识
             is_figure = bool(FIG_REGEX.search(caption) or FIG_REGEX.search(rel_path))
             if not is_figure:
+                print(f"[DEBUG] 跳过：不是 figure (caption={caption[:50]})", file=sys.stderr)
                 continue
+
+            print(f"[DEBUG] 通过所有检查！caption={caption[:80]}", file=sys.stderr)
 
             # 提取图号
             figure_num = extract_figure_number(caption)
