@@ -137,8 +137,8 @@
       "type": "n8n-nodes-wechat-offiaccount.wechatOfficialAccountNode",
       "typeVersion": 1,
       "position": [
-        -1872,
-        176
+        -1856,
+        208
       ],
       "credentials": {
         "wechatOfficialAccountCredentialsApi": {
@@ -158,8 +158,8 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 2.1,
       "position": [
-        -1136,
-        368
+        -928,
+        416
       ]
     },
     {
@@ -171,8 +171,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -944,
-        368
+        -736,
+        416
       ]
     },
     {
@@ -186,8 +186,8 @@
       "type": "n8n-nodes-wechat-offiaccount.wechatOfficialAccountNode",
       "typeVersion": 1,
       "position": [
-        -752,
-        368
+        -544,
+        416
       ],
       "credentials": {
         "wechatOfficialAccountCredentialsApi": {
@@ -260,20 +260,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2848,
+        -2880,
         0
       ]
     },
     {
       "parameters": {
-        "jsCode": "// 从HTTP Request节点获取图片提取服务的响应\nconst response = $input.first().json;\n\n// 检查提取是否成功\nif (!response.success) {\n  const errorMsg = response.error || '未知错误';\n  console.error('图片提取失败:', errorMsg);\n  return [];\n}\n\n// 获取图表信息和第一页\nconst figures = response.figures || [];\nconst firstPage = response.first_page;\n\nif (figures.length === 0) {\n  console.log('未提取到任何图表');\n}\n\nconsole.log(`成功提取 ${figures.length} 个图表，转换为binary格式...`);\n\n// 将每个图片的base64数据转换为n8n的binary格式\nconst results = [];\n\n// 首先添加第一页（如果存在）\nif (firstPage && firstPage.base64_data) {\n  console.log(`添加第一页: ${firstPage.filename} (${firstPage.base64_data.length} chars)`);\n  results.push({\n    json: {\n      type: 'first_page',\n      fileName: firstPage.filename,\n      page: firstPage.page\n    },\n    binary: {\n      data: {\n        data: firstPage.base64_data,\n        mimeType: firstPage.mime_type || 'image/png',\n        fileName: firstPage.filename,\n        fileExtension: 'png'\n      }\n    }\n  });\n}\n\n// 然后添加所有图表\nfor (let idx = 0; idx < figures.length; idx++) {\n  const fig = figures[idx];\n  \n  if (!fig.base64_data) {\n    console.error(`  [${idx + 1}/${figures.length}] 缺少 base64_data`);\n    continue;\n  }\n  \n  console.log(`  [${idx + 1}/${figures.length}] ${fig.filename} (${fig.base64_data.length} chars)`);\n  \n  results.push({\n    json: {\n      type: 'figure',\n      imageIndex: idx,\n      fileName: fig.filename,\n      page: fig.page,\n      figureIndex: fig.figure_index,\n      caption: fig.caption\n    },\n    binary: {\n      data: {\n        data: fig.base64_data,\n        mimeType: fig.mime_type || 'image/png',\n        fileName: fig.filename,\n        fileExtension: 'png'\n      }\n    }\n  });\n}\n\nconsole.log(`转换完成，成功 ${results.length} 个图片（含第一页）`);\nreturn results;"
+        "jsCode": "// 从HTTP Request节点获取图片提取服务的响应\nconst response = $input.first().json;\n\n// 检查提取是否成功\nif (!response.success) {\n  const errorMsg = response.error || '未知错误';\n  console.error('图片提取失败:', errorMsg);\n  return [];\n}\n\n// 获取图表信息和第一页\nconst figures = response.figures || [];\nconst firstPage = response.first_page;\n\nif (figures.length === 0) {\n  console.log('未提取到任何图表');\n}\n\nconsole.log(`成功提取 ${figures.length} 个图表，转换为binary格式...`);\n\n// 将每个图片的base64数据转换为n8n的binary格式\nconst results = [];\n\n// 首先添加第一页（如果存在）\nif (firstPage && firstPage.base64_data) {\n  console.log(`添加第一页: ${firstPage.filename} (${firstPage.base64_data.length} chars)`);\n  results.push({\n    json: {\n      type: 'first_page',\n      fileName: firstPage.filename,\n      page: firstPage.page,\n      // 将图片索引编码到文件名中，确保不会丢失\n      encodedFileName: `first_page_p${firstPage.page}.png`\n    },\n    binary: {\n      data: {\n        data: firstPage.base64_data,\n        mimeType: firstPage.mime_type || 'image/png',\n        fileName: `first_page_p${firstPage.page}.png`,\n        fileExtension: 'png'\n      }\n    }\n  });\n}\n\n// 然后添加所有图表\nfor (let idx = 0; idx < figures.length; idx++) {\n  const fig = figures[idx];\n  \n  if (!fig.base64_data) {\n    console.error(`  [${idx + 1}/${figures.length}] 缺少 base64_data`);\n    continue;\n  }\n  \n  // 将 figureIndex 编码到文件名中，格式：fig_{figureIndex}_idx_{imageIndex}_p{page}.png\n  const figNum = fig.figure_index ?? idx;\n  const encodedFileName = `fig_${figNum}_idx_${idx}_p${fig.page}.png`;\n  \n  console.log(`  [${idx + 1}/${figures.length}] ${fig.filename} -> ${encodedFileName} (${fig.base64_data.length} chars)`);\n  \n  results.push({\n    json: {\n      type: 'figure',\n      imageIndex: idx,\n      fileName: fig.filename,\n      page: fig.page,\n      figureIndex: figNum,\n      caption: fig.caption,\n      // 编码后的文件名，包含所有关键信息\n      encodedFileName: encodedFileName\n    },\n    binary: {\n      data: {\n        data: fig.base64_data,\n        mimeType: fig.mime_type || 'image/png',\n        // 使用编码后的文件名作为上传时的文件名\n        fileName: encodedFileName,\n        fileExtension: 'png'\n      }\n    }\n  });\n}\n\nconsole.log(`转换完成，成功 ${results.length} 个图片（含第一页）`);\nreturn results;"
       },
       "id": "ddaadcb7-a741-4b47-9b0f-252ba5b2c110",
       "name": "处理图片路径",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -2704,
+        -2720,
         0
       ]
     },
@@ -301,8 +301,8 @@
       "type": "n8n-nodes-wechat-offiaccount.wechatOfficialAccountNode",
       "typeVersion": 1,
       "position": [
-        -2352,
-        0
+        -2176,
+        -48
       ],
       "id": "593ace70-b761-44de-8a4e-6ea13c261fdd",
       "credentials": {
@@ -314,27 +314,27 @@
     },
     {
       "parameters": {
-        "jsCode": "const uploads = $input.all().map(item => item.json).filter(item => item && item.url);\nuploads.sort((a, b) => (a.imageIndex ?? 0) - (b.imageIndex ?? 0));\nreturn [{ json: { uploadedImages: uploads } }];\n"
+        "jsCode": "// 从所有输入中收集上传结果，确保保留原始的元数据\nconst allInputs = $input.all();\n\nconsole.log('=== 汇总正文图片链接 ===');\nconsole.log('总输入数量:', allInputs.length);\n\n// 辅助函数：从编码的文件名中提取 figureIndex\nfunction extractFigureIndexFromFileName(fileName) {\n  if (!fileName) return null;\n\n  // 格式：fig_{figureIndex}_idx_{imageIndex}_p{page}.png\n  const match = fileName.match(/fig_(\\d+)_idx_(\\d+)_p(\\d+)\\.png/);\n  if (match) {\n    return {\n      figureIndex: parseInt(match[1], 10),\n      imageIndex: parseInt(match[2], 10),\n      page: parseInt(match[3], 10)\n    };\n  }\n\n  // 格式：first_page_p{page}.png\n  const firstPageMatch = fileName.match(/first_page_p(\\d+)\\.png/);\n  if (firstPageMatch) {\n    return {\n      figureIndex: null,\n      imageIndex: -1,\n      page: parseInt(firstPageMatch[1], 10),\n      isFirstPage: true\n    };\n  }\n\n  return null;\n}\n\nconst uploads = [];\n\nfor (let i = 0; i < allInputs.length; i++) {\n  const item = allInputs[i];\n  const jsonData = item.json;\n\n  console.log(`\\n处理图片 ${i + 1}/${allInputs.length}:`);\n  console.log('  json keys:', Object.keys(jsonData));\n\n  // 微信上传后返回的 url\n  const url = jsonData.url;\n\n  if (!url) {\n    console.log('  ⚠️ 缺少 url，跳过');\n    continue;\n  }\n\n  // 尝试获取元数据\n  let figureIndex = jsonData.figureIndex;\n  let imageIndex = jsonData.imageIndex;\n  let fileName = jsonData.fileName || jsonData.filename;\n\n  // 如果没有 figureIndex，尝试从文件名中提取\n  if (figureIndex === undefined || figureIndex === null) {\n    // 尝试从多个可能的字段获取文件名\n    const possibleFileNames = [\n      jsonData.encodedFileName,\n      jsonData.fileName,\n      jsonData.filename,\n      jsonData.name\n    ];\n\n    for (const fn of possibleFileNames) {\n      if (fn) {\n        const extracted = extractFigureIndexFromFileName(fn);\n        if (extracted) {\n          figureIndex = extracted.figureIndex;\n          imageIndex = extracted.imageIndex;\n          console.log(`  ✓ 从文件名 \"${fn}\" 中提取: figureIndex=${figureIndex}, imageIndex=${imageIndex}`);\n          break;\n        }\n      }\n    }\n  }\n\n  console.log(`  url: ${url.substring(0, 50)}...`);\n  console.log(`  figureIndex: ${figureIndex}`);\n  console.log(`  imageIndex: ${imageIndex}`);\n  console.log(`  fileName: ${fileName}`);\n\n  uploads.push({\n    url: url,\n    media_id: jsonData.media_id,\n    figureIndex: figureIndex,\n    imageIndex: imageIndex,\n    fileName: fileName,\n    type: jsonData.type || 'figure'\n  });\n}\n\n// 按 imageIndex 排序\nuploads.sort((a, b) => (a.imageIndex ?? 0) - (b.imageIndex ?? 0));\n\nconsole.log(`\\n=== 汇总完成: ${uploads.length} 张图片 ===`);\nuploads.forEach((img, idx) => {\n  console.log(`  [${idx + 1}] figureIndex=${img.figureIndex}, imageIndex=${img.imageIndex}, url=${img.url.substring(0, 40)}...`);\n});\n\nreturn [{ json: { uploadedImages: uploads } }];"
       },
       "name": "汇总正文图片链接",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1888,
+        -1760,
         0
       ],
       "id": "c4808a93-4ac7-424c-b6c9-4942f609866b"
     },
     {
       "parameters": {
-        "jsCode": "// Merge节点将两个输入合并成一个item，所有字段都在同一个对象里\nconst mergedData = $input.first().json;\n\n// 从合并后的数据中提取所有字段\nconst uploadedImages = Array.isArray(mergedData.uploadedImages) ? mergedData.uploadedImages : [];\nlet content = mergedData.content || '';\nconst firstPageUrl = mergedData.url || null;  // 来自\"上传第一页到微信\"的url字段\n\nconsole.log('=== 图片插入调试信息 ===');\nconsole.log('合并后的数据keys:', Object.keys(mergedData));\nconsole.log('第一页图片URL:', firstPageUrl);\nconsole.log('正文图片数量:', uploadedImages.length);\nif (uploadedImages.length > 0) {\n  console.log('上传的图片详情:');\n  uploadedImages.forEach((img, idx) => {\n    console.log(`  图${idx + 1}: ${img.url || '(无URL)'}`);\n  });\n}\n\n// 搜索图片标记模式：<strong>图1. xxx</strong> 或 <strong>图 1. xxx</strong>\nconst figurePattern = /<strong[^>]*>图\\s*(\\d+)\\..*?<\\/strong>/g;\nconst matches = [...content.matchAll(figurePattern)];\nconsole.log(`HTML中找到 ${matches.length} 个图片标记`);\n\nif (matches.length > 0) {\n  matches.forEach((match, idx) => {\n    const figNum = match[1];\n    const fullMatch = match[0];\n    console.log(`  标记${idx + 1}: 图${figNum} - \"${fullMatch.substring(0, 50)}...\"`);\n  });\n}\n\n// 在图片标记前插入对应的微信图片\nif (matches.length > 0 && uploadedImages.length > 0) {\n  let imageIndex = 0;\n\n  content = content.replace(figurePattern, (match) => {\n    if (imageIndex >= uploadedImages.length) {\n      console.log(`⚠️  图片${imageIndex + 1}：已超出上传图片数量，跳过`);\n      return match;\n    }\n\n    const upload = uploadedImages[imageIndex];\n    if (!upload || !upload.url) {\n      console.log(`⚠️  图片${imageIndex + 1}：URL为空，跳过`);\n      imageIndex++;\n      return match;\n    }\n\n    console.log(`✓ 在\"${match.substring(0, 30)}...\"前插入图片: ${upload.url}`);\n\n    // 在图片标记前插入居中的图片\n    const imgTag = `<p data-tool=\"mdnice编辑器\" style=\"color: rgb(43, 43, 43); font-size: 14px; line-height: 1.8em; letter-spacing: 0.02em; text-align: center; text-indent: 0em; margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; padding-top: 8px; padding-bottom: 8px; padding-left: 0px; padding-right: 0px;\"><img src=\"${upload.url}\" data-src=\"${upload.url}\" style=\"max-width: 100%; height: auto;\" /></p>\\n${match}`;\n    imageIndex++;\n    return imgTag;\n  });\n\n  console.log(`=== 完成：成功插入了 ${imageIndex} 张图片 ===`);\n} else if (matches.length === 0 && uploadedImages.length > 0) {\n  // 如果没有找到图片标记，在第一个</blockquote>后或第一个<h2>标签后插入所有图片\n  console.log('⚠️  警告: HTML中未找到图片标记，将在文章开头插入所有图片');\n\n  const allImagesHtml = uploadedImages.map((upload, idx) => {\n    if (!upload || !upload.url) {\n      console.log(`⚠️  图片${idx + 1}：URL为空，跳过`);\n      return '';\n    }\n    console.log(`✓ 插入图片${idx + 1}: ${upload.url}`);\n    return `<p data-tool=\"mdnice编辑器\" style=\"color: rgb(43, 43, 43); font-size: 14px; line-height: 1.8em; letter-spacing: 0.02em; text-align: center; text-indent: 0em; margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; padding-top: 8px; padding-bottom: 8px; padding-left: 0px; padding-right: 0px;\"><img src=\"${upload.url}\" data-src=\"${upload.url}\" style=\"max-width: 100%; height: auto;\" /></p>`;\n  }).filter(html => html).join('\\n');\n\n  // 优先在第一个h2标签前插入\n  const h2Regex = /<h2[^>]*>/i;\n  if (h2Regex.test(content)) {\n    content = content.replace(h2Regex, `${allImagesHtml}\\n$&`);\n    console.log('✓ 已在第一个<h2>标签前插入所有图片');\n  } else {\n    // 如果没有h2，在第一个</blockquote>后插入\n    const blockquoteEndRegex = /<\\/blockquote>/i;\n    if (blockquoteEndRegex.test(content)) {\n      content = content.replace(blockquoteEndRegex, `$&\\n${allImagesHtml}`);\n      console.log('✓ 已在</blockquote>后插入所有图片');\n    } else {\n      // 如果都没有，在内容最前面插入\n      content = allImagesHtml + '\\n' + content;\n      console.log('✓ 已在内容最前面插入所有图片');\n    }\n  }\n\n  console.log(`=== 完成：成功插入了 ${uploadedImages.length} 张图片（fallback模式）===`);\n} else if (uploadedImages.length === 0) {\n  console.log('⚠️  警告: 没有上传的图片');\n}\n\n// 在summary（blockquote）后插入第一页图片\nif (firstPageUrl) {\n  console.log(`\\n准备插入第一页图片: ${firstPageUrl}`);\n  const blockquoteEndRegex = /<\\/blockquote>/i;\n  if (blockquoteEndRegex.test(content)) {\n    const firstPageImg = `<p style=\"text-align: center;\"><img src=\"${firstPageUrl}\" data-src=\"${firstPageUrl}\" style=\"max-width: 100%; height: auto;\" /></p>`;\n    content = content.replace(blockquoteEndRegex, `</blockquote>${firstPageImg}`);\n    console.log('✓ 第一页图片已成功插入到summary后');\n  } else {\n    console.log('⚠️  警告: 未找到blockquote标签');\n  }\n} else {\n  console.log('\\n⚠️  警告: 未找到第一页图片URL');\n}\n\nreturn [{\n  json: {\n    title: mergedData.title,\n    summary: mergedData.summary,\n    content: content,\n    uploadedImages: uploadedImages,\n    debug_content_length: content.length,\n    debug_first_page_inserted: !!firstPageUrl,\n    debug_figure_marks_found: matches.length,\n    debug_uploaded_images_count: uploadedImages.length\n  }\n}];"
+        "jsCode": "// 合并节点将两个输入合并成一个item，所有字段都在同一个对象里\nconst mergedData = $input.first().json;\n\n// 从合并后的数据中提取所有字段\nconst uploadedImages = Array.isArray(mergedData.uploadedImages) ? mergedData.uploadedImages : [];\nlet content = mergedData.content || '';\nconst firstPageUrl = mergedData.url || null;\n\nconsole.log('=== 图片插入（智能引用匹配版本）===');\nconsole.log('合并后的数据keys:', Object.keys(mergedData));\nconsole.log('第一页图片URL:', firstPageUrl);\nconsole.log('正文图片数量:', uploadedImages.length);\nif (uploadedImages.length > 0) {\n  console.log('上传的图片详情:');\n  uploadedImages.forEach((img, idx) => {\n    console.log(`  图${idx + 1}: figureIndex=${img.figureIndex || 'N/A'}, url=${img.url || '(无URL)'}`);\n  });\n}\n\n// ==================== 辅助函数 ====================\n\n// 创建图片 HTML 标签\nfunction createImageTag(url) {\n  return `<p data-tool=\"mdnice编辑器\" style=\"color: rgb(43, 43, 43); font-size: 14px; line-height: 1.8em; letter-spacing: 0.02em; text-align: center; text-indent: 0em; margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; padding-top: 8px; padding-bottom: 8px; padding-left: 0px; padding-right: 0px;\"><img src=\"${url}\" data-src=\"${url}\" style=\"max-width: 100%; height: auto;\" /></p>`;\n}\n\n// 新函数: 在 HTML 中查找所有\"图X\"的提及\nfunction findFigureReferencesInText(htmlContent) {\n  const figureReferences = new Map();\n\n  // 匹配各种形式的图片提及：\"图1\"、\"如图2所示\"、\"参见图3\"等\n  const refPattern = /(?:如图|参见图|见图|图\\s*)(\\d+)(?:\\s*(?:所示|显示|表明|展示|中))?/g;\n\n  // 匹配块级元素\n  const elementPattern = /<(p|h2|h3|h4|li|div)([^>]*)>(.*?)<\\/\\1>/gs;\n\n  let elementMatch;\n  while ((elementMatch = elementPattern.exec(htmlContent)) !== null) {\n    const [fullElement, tagName, attributes, innerHTML] = elementMatch;\n    // 提取纯文本（去除内部 HTML 标签）\n    const textContent = innerHTML.replace(/<[^>]+>/g, '');\n\n    // 在文本中搜索图片提及\n    let refMatch;\n    refPattern.lastIndex = 0; // 重置正则位置\n    while ((refMatch = refPattern.exec(textContent)) !== null) {\n      const figNum = parseInt(refMatch[1], 10);\n\n      // 只记录第一次出现的位置\n      if (!figureReferences.has(figNum)) {\n        figureReferences.set(figNum, {\n          figureNumber: figNum,\n          insertPosition: elementMatch.index + fullElement.length,\n          elementMatch: fullElement,\n          tagName: tagName,\n          context: textContent.substring(\n            Math.max(0, refMatch.index - 10),\n            Math.min(textContent.length, refMatch.index + 20)\n          )\n        });\n      }\n    }\n  }\n\n  return figureReferences;\n}\n\n// 新函数: 根据引用位置插入图片\nfunction insertAtReferences(htmlContent, images, references) {\n  const insertedFigures = new Set();\n  const insertionPlan = [];\n\n  // 构建插入计划\n  images.forEach((upload, idx) => {\n    if (!upload || !upload.url) {\n      console.log(`  ⚠️ 图片${idx + 1}：URL为空，跳过`);\n      return;\n    }\n\n    const figNum = upload.figureIndex;\n    if (figNum === undefined || figNum === null) {\n      console.log(`  ⚠️ 图片${idx + 1}：缺少 figureIndex，跳过`);\n      return;\n    }\n\n    if (references.has(figNum)) {\n      const ref = references.get(figNum);\n      insertionPlan.push({\n        figNum: figNum,\n        imageUrl: upload.url,\n        position: ref.insertPosition,\n        element: ref.elementMatch,\n        context: ref.context\n      });\n      insertedFigures.add(figNum);\n    }\n  });\n\n  // 按位置倒序排序（从后往前插入，避免位置偏移）\n  insertionPlan.sort((a, b) => b.position - a.position);\n\n  // 执行插入\n  let modifiedContent = htmlContent;\n  insertionPlan.forEach(({figNum, imageUrl, element, context}) => {\n    const imgTag = createImageTag(imageUrl);\n    modifiedContent = modifiedContent.replace(element, element + '\\n' + imgTag);\n    console.log(`  ✓ 图${figNum} 插入到引用位置后 (\"${context}...\")`);\n  });\n\n  // 收集未插入的图片\n  const uninsertedImages = images.filter((img, idx) => {\n    const figNum = img.figureIndex;\n    return figNum !== undefined && figNum !== null && !insertedFigures.has(figNum);\n  });\n\n  return {\n    modifiedContent: modifiedContent,\n    insertedFigures: insertedFigures,\n    uninsertedImages: uninsertedImages\n  };\n}\n\n// 标准图注插入（保持原有逻辑）\nfunction insertAtCaptions(htmlContent, images, captionMatches) {\n  // 创建图号到图片的映射表\n  const figureMap = new Map();\n  images.forEach(img => {\n    if (img.figureIndex !== undefined && img.figureIndex !== null) {\n      figureMap.set(img.figureIndex, img);\n    }\n  });\n\n  console.log(`创建图号映射表: ${figureMap.size} 个图片`);\n  figureMap.forEach((img, figNum) => {\n    console.log(`  图${figNum} -> ${img.url}`);\n  });\n\n  // 在图片标记前插入对应的微信图片\n  const figurePattern = /<strong[^>]*>图\\s*(\\d+)\\..*?<\\/strong>/g;\n  let insertedCount = 0;\n  let notFoundFigures = [];\n\n  htmlContent = htmlContent.replace(figurePattern, (match, figNum) => {\n    const figureIndex = parseInt(figNum, 10);\n    const upload = figureMap.get(figureIndex);\n\n    if (!upload || !upload.url) {\n      console.log(`  ⚠️ 图${figNum}：未找到对应的上传图片，跳过`);\n      notFoundFigures.push(figNum);\n      return match;\n    }\n\n    console.log(`  ✓ 在\"图${figNum}\"标记前插入对应图片: ${upload.url}`);\n    const imgTag = createImageTag(upload.url);\n    insertedCount++;\n    return imgTag + '\\n' + match;\n  });\n\n  console.log(`标准图注插入完成：成功插入 ${insertedCount} 张图片`);\n  if (notFoundFigures.length > 0) {\n    console.log(`  ⚠️ 未找到对应图片的图号: ${notFoundFigures.join(', ')}`);\n  }\n\n  return htmlContent;\n}\n\n// Fallback: 将所有图片插入到开头\nfunction insertAllAtBeginning(htmlContent, images) {\n  console.log('⚠️ 使用 fallback 模式：将所有图片插入到文章开头');\n\n  const allImagesHtml = images.map((upload, idx) => {\n    if (!upload || !upload.url) {\n      console.log(`  ⚠️ 图片${idx + 1}：URL为空，跳过`);\n      return '';\n    }\n    console.log(`  ✓ 插入图片${idx + 1}: ${upload.url}`);\n    return createImageTag(upload.url);\n  }).filter(html => html).join('\\n');\n\n  // 优先在第一个h2标签前插入\n  const h2Regex = /<h2[^>]*>/i;\n  if (h2Regex.test(htmlContent)) {\n    htmlContent = htmlContent.replace(h2Regex, `${allImagesHtml}\\n$&`);\n    console.log('  ✓ 已在第一个<h2>标签前插入所有图片');\n  } else {\n    // 如果没有h2，在第一个</blockquote>后插入\n    const blockquoteEndRegex = /<\\/blockquote>/i;\n    if (blockquoteEndRegex.test(htmlContent)) {\n      htmlContent = htmlContent.replace(blockquoteEndRegex, `$&\\n${allImagesHtml}`);\n      console.log('  ✓ 已在</blockquote>后插入所有图片');\n    } else {\n      // 如果都没有，在内容最前面插入\n      htmlContent = allImagesHtml + '\\n' + htmlContent;\n      console.log('  ✓ 已在内容最前面插入所有图片');\n    }\n  }\n\n  return htmlContent;\n}\n\n// ==================== 主逻辑 ====================\n\nconsole.log('\\n步骤1: 检查标准图注...');\nconst figurePattern = /<strong[^>]*>图\\s*(\\d+)\\..*?<\\/strong>/g;\nconst captionMatches = [...content.matchAll(figurePattern)];\nconsole.log(`找到 ${captionMatches.length} 个标准图注标记`);\n\nif (captionMatches.length > 0 && uploadedImages.length > 0) {\n  console.log('→ 使用标准图注匹配模式');\n  content = insertAtCaptions(content, uploadedImages, captionMatches);\n  console.log('=== 标准图注插入完成 ===\\n');\n} else if (uploadedImages.length > 0) {\n  console.log('\\n步骤2: 搜索全文中的图片提及...');\n  const figureReferences = findFigureReferencesInText(content);\n  console.log(`找到 ${figureReferences.size} 个图片提及`);\n\n  if (figureReferences.size > 0) {\n    figureReferences.forEach((ref, figNum) => {\n      console.log(`  图${figNum}: \"${ref.context}\" 在 <${ref.tagName}> 中`);\n    });\n  }\n\n  if (figureReferences.size > 0) {\n    console.log('\\n步骤3: 按引用位置插入图片...');\n    const result = insertAtReferences(content, uploadedImages, figureReferences);\n    content = result.modifiedContent;\n\n    console.log(`成功插入 ${result.insertedFigures.size} 张图片到引用位置`);\n\n    // 处理未提及的图片\n    if (result.uninsertedImages.length > 0) {\n      console.log(`\\n步骤4: 处理未提及的图片 (${result.uninsertedImages.length} 张)...`);\n      console.log('→ 将未提及的图片追加到文末');\n      const uninsertedHtml = result.uninsertedImages\n        .map(img => {\n          console.log(`  追加: 图${img.figureIndex}`);\n          return createImageTag(img.url);\n        })\n        .join('\\n');\n      content = content + '\\n' + uninsertedHtml;\n    }\n\n    console.log(`\\n=== 完成: ${result.insertedFigures.size} 个按引用插入, ${result.uninsertedImages.length} 个追加到文末 ===\\n`);\n  } else {\n    console.log('\\n步骤4: 完全没有图片提及，使用 fallback 模式...');\n    content = insertAllAtBeginning(content, uploadedImages);\n    console.log('=== Fallback 插入完成 ===\\n');\n  }\n} else {\n  console.log('⚠️ 没有上传的图片');\n}\n\n// 在summary（blockquote）后插入第一页图片\nif (firstPageUrl) {\n  console.log(`准备插入第一页图片: ${firstPageUrl}`);\n  const blockquoteEndRegex = /<\\/blockquote>/i;\n  if (blockquoteEndRegex.test(content)) {\n    const firstPageImg = `<p style=\"text-align: center;\"><img src=\"${firstPageUrl}\" data-src=\"${firstPageUrl}\" style=\"max-width: 100%; height: auto;\" /></p>`;\n    content = content.replace(blockquoteEndRegex, `</blockquote>${firstPageImg}`);\n    console.log('✓ 第一页图片已成功插入到summary后');\n  } else {\n    console.log('⚠️ 未找到blockquote标签');\n  }\n} else {\n  console.log('⚠️ 未找到第一页图片URL');\n}\n\nreturn [{\n  json: {\n    title: mergedData.title,\n    summary: mergedData.summary,\n    content: content,\n    uploadedImages: uploadedImages,\n    debug_content_length: content.length,\n    debug_first_page_inserted: !!firstPageUrl,\n    debug_uploaded_images_count: uploadedImages.length\n  }\n}];"
       },
       "name": "替换正文图片链接",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1136,
-        96
+        -1104,
+        192
       ],
       "id": "de78e307-4287-4e91-a472-ceeb8dbed438"
     },
@@ -364,8 +364,8 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 2.1,
       "position": [
-        -1360,
-        96
+        -1312,
+        192
       ]
     },
     {
@@ -391,7 +391,7 @@
       "typeVersion": 2,
       "position": [
         -2352,
-        176
+        208
       ]
     },
     {
@@ -404,7 +404,7 @@
       "typeVersion": 2,
       "position": [
         -2352,
-        352
+        400
       ]
     },
     {
@@ -418,7 +418,7 @@
       "typeVersion": 1,
       "position": [
         -1856,
-        352
+        400
       ],
       "credentials": {
         "wechatOfficialAccountCredentialsApi": {
@@ -431,9 +431,8 @@
       "parameters": {
         "model": {
           "__rl": true,
-          "value": "gemini-2.5-pro",
-          "mode": "list",
-          "cachedResultName": "gemini-2.5-pro"
+          "value": "gemini-3-pro-preview",
+          "mode": "id"
         },
         "options": {
           "maxTokens": "={{ 65355 }}",
@@ -455,6 +454,34 @@
           "name": "OpenAi account"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 保存原始元数据，用于后续与上传结果合并\nconst items = $input.all();\nconst metadata = items.map((item, idx) => ({\n  json: {\n    originalIndex: idx,\n    figureIndex: item.json.figureIndex,\n    imageIndex: item.json.imageIndex,\n    fileName: item.json.fileName,\n    encodedFileName: item.json.encodedFileName,\n    caption: item.json.caption,\n    page: item.json.page,\n    type: item.json.type\n  }\n}));\n\nconsole.log('保存元数据:', metadata.length, '个图片');\nmetadata.forEach((m, i) => {\n  console.log(`  [${i}] figureIndex=${m.json.figureIndex}, encodedFileName=${m.json.encodedFileName}`);\n});\n\nreturn metadata;"
+      },
+      "id": "bbaf4f7e-34b6-44d1-90ce-ccbd0b7c2e30",
+      "name": "保存图片元数据",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2176,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "d9906105-f43b-4a4f-a3aa-1425d3d88253",
+      "name": "合并上传结果和元数据",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        -1952,
+        0
+      ]
     }
   ],
   "pinData": {},
@@ -691,6 +718,11 @@
             "node": "提取第一张图作为封面",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "保存图片元数据",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -699,7 +731,7 @@
       "main": [
         [
           {
-            "node": "汇总正文图片链接",
+            "node": "合并上传结果和元数据",
             "type": "main",
             "index": 0
           }
@@ -793,13 +825,35 @@
           }
         ]
       ]
+    },
+    "保存图片元数据": {
+      "main": [
+        [
+          {
+            "node": "合并上传结果和元数据",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "合并上传结果和元数据": {
+      "main": [
+        [
+          {
+            "node": "汇总正文图片链接",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "742a9803-3719-4d7e-98bb-b17ce802cf33",
+  "versionId": "258be669-3ec2-41c8-aee6-922a23d580b5",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "55eea1944d6d0944ec0c448021aced11250d527b9d21d7157e4aa73d564b38ed"

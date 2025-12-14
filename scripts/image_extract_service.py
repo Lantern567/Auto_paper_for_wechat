@@ -411,7 +411,7 @@ class MinerUImageExtractor:
             page_num = self._infer_page_from_path(rel_path)
 
             figure_info = {
-                'page': page_num,
+                'page': page_num if page_num is not None else figure_num,  # 确保 page 不为 None
                 'figure_index': figure_num,
                 'caption': caption,
                 'bbox': None,  # MinerU markdown 不提供精确 bbox
